@@ -70,8 +70,8 @@ void pop_alerts(lt::session& ses)
 
 int main(int argc, char* argv[]) try
 {
-	if (argc != 7) {
-		std::cerr << "usage: ./simple_client <save path> <torrent seed file> <log file path> <whether auto exit> <group members>\n";
+	if (argc != 8) {
+		std::cerr << "usage: ./simple_client <save path> <torrent seed file> <log file path> <whether enable compression> <whether auto exit> <white upload list> <group members>\n";
 		return 1;
 	}
 
@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) try
 	}
 
 	bool auto_exit;
-	std::string s_auto_exit(argv[4]);
+	std::string s_auto_exit(argv[5]);
 	if (s_auto_exit == "true" || s_auto_exit == "True" || s_auto_exit == "True") {
 		auto_exit = true;
 	} else {
@@ -132,13 +132,14 @@ int main(int argc, char* argv[]) try
 //	p.flags |= lt::torrent_flags::share_mode;
 //    p.flags |= lt::torrent_flags::seed_mode;
 	p.ti = std::make_shared<lt::torrent_info>(argv[2]);
-	p.group_members = argv[5];
+	p.group_members = argv[7];
 	std::string enable_compression(argv[4]);
 	if (enable_compression == "true" || enable_compression == "True" || enable_compression == "TRUE") {
 		p.enable_compression = true;
 	} else {
 		p.enable_compression = false;
 	}
+	p.upload_white_list = argv[6];
 	auto handle = ses.add_torrent(p);
 
 	while (!(handle.is_finished() && auto_exit))
