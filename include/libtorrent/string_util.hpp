@@ -45,6 +45,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <limits>
 #include <array> // for std::array
 
+
 namespace libtorrent {
 
 	TORRENT_EXTRA_EXPORT bool is_alpha(char c);
@@ -96,6 +97,8 @@ namespace libtorrent {
 	};
 
 	std::vector<boost::asio::ip::address_v4> parse_group_members_list(std::string const& in);
+
+	std::vector<boost::asio::ip::address_v4> parse_upload_white_list(std::string const& in);
 
 	// this parses the string that's used as the listen_interfaces setting.
 	// it is a comma-separated list of IP or device names with ports. For

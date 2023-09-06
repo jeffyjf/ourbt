@@ -242,11 +242,12 @@ bool is_downloading_state(int const st)
 		m_add_torrent_params.reset(new add_torrent_params(p));
 
 		m_group_members = parse_group_members_list(p.group_members);
-
 		auto ptr = m_group_members.begin();
 		for (; ptr < m_group_members.end(); ptr++) {
 			debug_log("Add group member: %s", *ptr);
 		}
+
+		m_upload_white_list = parse_upload_white_list(m_add_torrent_params->upload_white_list);
 
 #if TORRENT_USE_UNC_PATHS
 		m_save_path = canonicalize_path(m_save_path);

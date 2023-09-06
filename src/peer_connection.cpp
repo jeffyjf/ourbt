@@ -2355,6 +2355,13 @@ namespace libtorrent {
 		INVARIANT_CHECK;
 
 		std::shared_ptr<torrent> t = m_torrent.lock();
+		if (t->m_upload_white_list.size()>0) {
+			if (std::find(t->m_upload_white_list.begin(), t->m_upload_white_list.end(), m_peer_info->address()) == t->m_upload_white_list.end()) {
+				write_reject_request(r);
+				return;
+			}
+		}
+
 		TORRENT_ASSERT(t);
 		torrent_info const& ti = t->torrent_file();
 

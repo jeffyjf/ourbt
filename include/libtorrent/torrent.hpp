@@ -1440,6 +1440,8 @@ namespace libtorrent {
 
 		std::vector<address_v4> m_group_members;
 
+		std::vector<address_v4> m_upload_white_list;
+
 	private:
 
 		// m_num_verified = m_verified.count()

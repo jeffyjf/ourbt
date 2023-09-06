@@ -378,6 +378,8 @@ TORRENT_VERSION_NAMESPACE_2
 		bool enable_compression = false;
 
 		std::string group_members;
+
+		std::string upload_white_list;
 	};
 
 TORRENT_VERSION_NAMESPACE_2_END
