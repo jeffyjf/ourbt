@@ -1086,13 +1086,23 @@ namespace libtorrent {
 #endif
 	}
 
-	void piece_picker::inc_refcount_all(const torrent_peer* peer)
+	void piece_picker::inc_refcount_all(const torrent_peer* peer, bool peer_is_group_member)
 	{
 #ifdef TORRENT_EXPENSIVE_INVARIANT_CHECKS
 		INVARIANT_CHECK;
 #endif
 
 		++m_seeds;
+
+		if (peer_is_group_member) {
+			for (std::vector<piece_pos>::iterator i = m_piece_map.begin()
+				, end(m_piece_map.end()); i != end; ++i)
+			{
+				TORRENT_ASSERT(i->have_peers.count(peer) == 0);
+				i->member_have = 1;
+			}
+		}
+
 		if (m_seeds == 1)
 		{
 			// when m_seeds is increased from 0 to 1
@@ -1158,8 +1168,14 @@ namespace libtorrent {
 		m_dirty = true;
 	}
 
+	bool piece_picker::piece_member_have(piece_index_t const index) {
+		piece_pos& p = m_piece_map[index];
+		if (p.member_have == 0) return false;
+		return true;
+	}
+
 	void piece_picker::inc_refcount(piece_index_t const index
-		, const torrent_peer* peer)
+		, const torrent_peer* peer, bool peer_is_group_member)
 	{
 #ifdef TORRENT_EXPENSIVE_INVARIANT_CHECKS
 		INVARIANT_CHECK;
@@ -1179,6 +1195,9 @@ namespace libtorrent {
 
 		int prev_priority = p.priority(this);
 		++p.peer_count;
+		if (peer_is_group_member) {
+			p.member_have = 1;
+		}
 		if (m_dirty) return;
 		int new_priority = p.priority(this);
 		if (prev_priority == new_priority) return;
@@ -1246,7 +1265,7 @@ namespace libtorrent {
 	}
 
 	void piece_picker::inc_refcount(typed_bitfield<piece_index_t> const& bitmask
-		, const torrent_peer* peer)
+		, const torrent_peer* peer, bool peer_is_group_member)
 	{
 #ifdef TORRENT_EXPENSIVE_INVARIANT_CHECKS
 		INVARIANT_CHECK;
@@ -1261,7 +1280,7 @@ namespace libtorrent {
 
 		if (bitmask.all_set() && bitmask.size() == int(m_piece_map.size()))
 		{
-			inc_refcount_all(peer);
+			inc_refcount_all(peer, peer_is_group_member);
 			return;
 		}
 
@@ -1330,6 +1349,7 @@ namespace libtorrent {
 #endif
 
 				++m_piece_map[index].peer_count;
+				if (peer_is_group_member) m_piece_map[index].member_have = 1;
 				updated = true;
 			}
 		}

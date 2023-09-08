@@ -30,6 +30,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include "iostream"
+
 #include "libtorrent/bitfield.hpp"
 #include "libtorrent/peer_connection.hpp"
 #include "libtorrent/torrent.hpp"
@@ -237,6 +239,11 @@ namespace libtorrent {
 
 				TORRENT_ASSERT(p.num_peers(pb) > 0);
 				busy_block = pb;
+				continue;
+			}
+
+			if (!c.is_group_member() && p.piece_member_have(pb.piece_index)) {
+				std::cout << "Skip send piece: " << pb.piece_index << " request to peer: " << c.get_socket()->remote_endpoint() << std::endl;
 				continue;
 			}
 

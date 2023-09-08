@@ -312,6 +312,10 @@ namespace aux {
 
 		void send_allowed_set();
 
+		bool is_group_member() const {
+			return m_is_group_member;
+		}
+
 #ifndef TORRENT_DISABLE_EXTENSIONS
 		void add_extension(std::shared_ptr<peer_plugin>);
 		peer_plugin const* find_plugin(string_view type);
@@ -1140,6 +1144,8 @@ namespace aux {
 		// message is received. This information
 		// is used to fill the bitmask in init()
 		bool m_have_all:1;
+
+		bool m_is_group_member:1;
 
 		// other side says that it's interested in downloading
 		// from us.
