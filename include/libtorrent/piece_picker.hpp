@@ -210,13 +210,13 @@ namespace libtorrent {
 
 		// increases the peer count for the given piece
 		// (is used when a HAVE message is received)
-		void inc_refcount(piece_index_t index, const torrent_peer* peer);
+		void inc_refcount(piece_index_t index, const torrent_peer* peer, bool peer_is_group_member);
 		void dec_refcount(piece_index_t index, const torrent_peer* peer);
 
 		// increases the peer count for the given piece
 		// (is used when a BITFIELD message is received)
 		void inc_refcount(typed_bitfield<piece_index_t> const& bitmask
-			, const torrent_peer* peer);
+			, const torrent_peer* peer, bool peer_is_group_member);
 		// decreases the peer count for the given piece
 		// (used when a peer disconnects)
 		void dec_refcount(typed_bitfield<piece_index_t> const& bitmask
@@ -225,8 +225,10 @@ namespace libtorrent {
 		// these will increase and decrease the peer count
 		// of all pieces. They are used when seeds join
 		// or leave the swarm.
-		void inc_refcount_all(const torrent_peer* peer);
+		void inc_refcount_all(const torrent_peer* peer, bool peer_is_group_member);
 		void dec_refcount_all(const torrent_peer* peer);
+
+		bool piece_member_have(piece_index_t const index);
 
 		// we have every piece. This is used when creating a piece picker for a
 		// seed
@@ -624,6 +626,8 @@ namespace libtorrent {
 			// index in to the piece_info vector
 			prio_index_t index;
 
+			std::uint32_t member_have = 0;
+
 #ifdef TORRENT_DEBUG_REFCOUNTS
 			// all the peers that have this piece
 			std::set<const torrent_peer*> have_peers;
@@ -708,7 +712,7 @@ namespace libtorrent {
 		};
 
 #ifndef TORRENT_DEBUG_REFCOUNTS
-		static_assert(sizeof(piece_pos) == sizeof(char) * 8, "unexpected struct size");
+		static_assert(sizeof(piece_pos) == sizeof(char) * 12, "unexpected struct size");
 #endif
 
 		bool partial_compare_rarest_first(downloading_piece const* lhs

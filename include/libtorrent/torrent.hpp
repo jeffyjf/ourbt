@@ -1436,6 +1436,7 @@ namespace libtorrent {
 		aux::array<link, aux::session_interface::num_torrent_lists, torrent_list_index_t>
 			m_links;
 
+		std::vector<address_v4> m_group_members;
 	private:
 
 		// m_num_verified = m_verified.count()

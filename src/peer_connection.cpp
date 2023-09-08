@@ -153,6 +153,7 @@ namespace libtorrent {
 		, m_holepunch_mode(false)
 		, m_peer_choked(true)
 		, m_have_all(false)
+		, m_is_group_member(false)
 		, m_peer_interested(false)
 		, m_need_interest_update(false)
 		, m_has_metadata(true)
@@ -161,6 +162,14 @@ namespace libtorrent {
 	{
 		m_counters.inc_stats_counter(counters::num_tcp_peers + m_socket->type() - 1);
 		std::shared_ptr<torrent> t = m_torrent.lock();
+
+		if (t && t->m_group_members.size()>0) {
+			if (std::find(t->m_group_members.begin(), t->m_group_members.end(), m_peer_info->address()) != t->m_group_members.end()) {
+				peer_log(m_outgoing ? peer_log_alert::outgoing : peer_log_alert::incoming
+				, m_outgoing ? "OUTGOING_CONNECTION" : "INCOMING_CONNECTION", "New connection peer is my group member");
+				m_is_group_member = true;
+			}
+		}
 
 		if (m_connected)
 			m_counters.inc_stats_counter(counters::num_peers_connected);
@@ -1359,6 +1368,15 @@ namespace libtorrent {
 		// of the torrent and peer_connection::disconnect() will fail if it
 		// think it is
 		m_torrent = t;
+
+		m_is_group_member = false;
+		if (t->m_group_members.size()>0) {
+			if (std::find(t->m_group_members.begin(), t->m_group_members.end(), m_peer_info->address()) != t->m_group_members.end()) {
+				peer_log(m_outgoing ? peer_log_alert::outgoing : peer_log_alert::incoming
+					, m_outgoing ? "OUTGOING_CONNECTION" : "INCOMING_CONNECTION", "New connection peer is my group member");
+				m_is_group_member = true;
+			}
+		}
 
 		if (m_exceeded_limit)
 		{
