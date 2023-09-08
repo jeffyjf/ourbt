@@ -165,7 +165,8 @@ namespace libtorrent {
 
 		if (t && t->m_group_members.size()>0) {
 			if (std::find(t->m_group_members.begin(), t->m_group_members.end(), m_peer_info->address()) != t->m_group_members.end()) {
-				std::cout << "New connection peer: " << m_peer_info->address() << " is my group member." << std::endl;
+				peer_log(m_outgoing ? peer_log_alert::outgoing : peer_log_alert::incoming
+				, m_outgoing ? "OUTGOING_CONNECTION" : "INCOMING_CONNECTION", "New connection peer is my group member");
 				m_is_group_member = true;
 			}
 		}
@@ -1367,6 +1368,15 @@ namespace libtorrent {
 		// of the torrent and peer_connection::disconnect() will fail if it
 		// think it is
 		m_torrent = t;
+
+		m_is_group_member = false;
+		if (t->m_group_members.size()>0) {
+			if (std::find(t->m_group_members.begin(), t->m_group_members.end(), m_peer_info->address()) != t->m_group_members.end()) {
+				peer_log(m_outgoing ? peer_log_alert::outgoing : peer_log_alert::incoming
+					, m_outgoing ? "OUTGOING_CONNECTION" : "INCOMING_CONNECTION", "New connection peer is my group member");
+				m_is_group_member = true;
+			}
+		}
 
 		if (m_exceeded_limit)
 		{

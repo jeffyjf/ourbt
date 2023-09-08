@@ -244,7 +244,7 @@ bool is_downloading_state(int const st)
 
 		auto ptr = m_group_members.begin();
 		for (; ptr < m_group_members.end(); ptr++) {
-			std::cout << "The peer : " << *ptr << " is group member" << std::endl;
+			debug_log("Add group member: %s", *ptr);
 		}
 
 #if TORRENT_USE_UNC_PATHS

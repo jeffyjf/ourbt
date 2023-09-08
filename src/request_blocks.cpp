@@ -243,7 +243,7 @@ namespace libtorrent {
 			}
 
 			if (!c.is_group_member() && p.piece_member_have(pb.piece_index)) {
-				std::cout << "Skip send piece: " << pb.piece_index << " request to peer: " << c.get_socket()->remote_endpoint() << std::endl;
+				c.peer_log(peer_log_alert::info, "PIECE_PICKER", "skip piece: %d request", pb.piece_index);
 				continue;
 			}
 
