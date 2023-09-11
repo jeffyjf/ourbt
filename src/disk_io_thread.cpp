@@ -3494,32 +3494,6 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 			}
 		}
 
-		//if (m_settings.get_bool(settings_pack::enable_piece_compression_transmission)) 
-		//{
-		//	for (auto i = completed_jobs.iterate(); i.get(); i.next())
-		//	{
-		//		disk_io_job* j = static_cast<disk_io_job*>(i.get());
-		//		printf("compresse thread id:%ld\n", std::this_thread::get_id());
-		//		auto& buffer = boost::get<disk_buffer_holder>(j->argument);
-		//		size_t len = buffer.size();
-		//		std::size_t compressed_length = snappy_max_compressed_length(len);
-		//		char* compress_buf = (char*)std::malloc(compressed_length);
-		//		int stat_result = snappy_compress(buffer.data(), len, compress_buf, &compressed_length);
-		//		if (stat_result != SNAPPY_OK) {
-		//			std::free(compress_buf);
-		//			printf("compresse error\n");
-		//			continue;
-		//		}
-		//		if (compressed_length >= len || len / (len - compressed_length) > 10) {
-		//			std::free(compress_buf);
-		//			printf("compress rate less than 10% \n");
-		//			continue;
-		//		}
-		//		buffer.reset(compress_buf, compressed_length);
-		//		buffer.setFree(1);
-		//	}
-		//}
-		
 		std::lock_guard<std::mutex> l(m_completed_jobs_mutex);
 		m_completed_jobs.append(jobs);
 

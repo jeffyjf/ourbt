@@ -97,13 +97,6 @@ int main(int argc, char* argv[]) try
 		g_log_file = std::fopen(log_file_path.c_str(), "a+");
 	}
 
-	std::string enable_compression(argv[4]);
-	if (enable_compression == "true" || enable_compression == "True" || enable_compression == "TRUE") {
-		settings.set_bool(lt::settings_pack::enable_piece_compression_transmission, true);
-	} else {
-		settings.set_bool(lt::settings_pack::enable_piece_compression_transmission, false);
-	}
-
 	bool auto_exit;
 	std::string s_auto_exit(argv[5]);
 	if (s_auto_exit == "true" || s_auto_exit == "True" || s_auto_exit == "True") {
@@ -141,6 +134,12 @@ int main(int argc, char* argv[]) try
 	p.flags |= lt::torrent_flags::share_mode;
     p.flags |= lt::torrent_flags::seed_mode;
 	p.ti = std::make_shared<lt::torrent_info>(argv[2]);
+	std::string enable_compression(argv[4]);
+	if (enable_compression == "true" || enable_compression == "True" || enable_compression == "TRUE") {
+		p.enable_compression = true;
+	} else {
+		p.enable_compression = false;
+	}
 	auto handle = ses.add_torrent(p);
 
 	while (!(handle.is_finished() && auto_exit))
