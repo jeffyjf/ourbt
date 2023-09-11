@@ -37,6 +37,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <vector>
 #include <functional>
 
+#include <snappy-c.h>
+
 #ifndef TORRENT_DISABLE_LOGGING
 #include "libtorrent/hex.hpp" // to_hex
 #endif
@@ -1009,6 +1011,7 @@ namespace {
 
 		std::shared_ptr<torrent> t = associated_torrent().lock();
 		TORRENT_ASSERT(t);
+		int recv_pos_size = t->m_enable_compression?17:13;
 		bool const merkle = static_cast<std::uint8_t>(recv_buffer.front()) == 250;
 		if (merkle)
 		{
@@ -1017,22 +1020,22 @@ namespace {
 				received_bytes(0, received);
 				return;
 			}
-			if (recv_pos < 13)
+			if (recv_pos < recv_pos_size)
 			{
 				received_bytes(0, received);
 				return;
 			}
-			char const* ptr = recv_buffer.data() + 9;
+			char const* ptr = recv_buffer.data() + (recv_pos_size - 4);
 			int const list_size = detail::read_int32(ptr);
 
-			if (list_size > m_recv_buffer.packet_size() - 13 || list_size < 0)
+			if (list_size > m_recv_buffer.packet_size() - (recv_pos_size - 4) || list_size < 0)
 			{
 				received_bytes(0, received);
 				disconnect(errors::invalid_hash_list, operation_t::bittorrent, peer_error);
 				return;
 			}
 
-			if (m_recv_buffer.packet_size() - 13 - list_size > t->block_size())
+			if (m_recv_buffer.packet_size() - recv_pos_size - list_size > t->block_size())
 			{
 				received_bytes(0, received);
 				disconnect(errors::packet_too_large, operation_t::bittorrent, peer_error);
@@ -1043,7 +1046,7 @@ namespace {
 		{
 			if (recv_pos == 1)
 			{
-				if (m_recv_buffer.packet_size() - 9 > t->block_size())
+				if (m_recv_buffer.packet_size() - (recv_pos_size-4) > t->block_size())
 				{
 					received_bytes(0, received);
 					disconnect(errors::packet_too_large, operation_t::bittorrent, peer_error);
@@ -1055,7 +1058,9 @@ namespace {
 		// or data payload for the statistics
 		int piece_bytes = 0;
 
-		int header_size = merkle?13:9;
+		int header_size;
+		if (t->m_enable_compression) header_size = merkle?17:13;
+		else header_size = merkle?13:9;
 
 		peer_request p;
 		int list_size = 0;
@@ -1065,6 +1070,9 @@ namespace {
 			const char* ptr = recv_buffer.data() + 1;
 			p.piece = piece_index_t(detail::read_int32(ptr));
 			p.start = detail::read_int32(ptr);
+			int peer_optional_length;
+			if (t->m_enable_compression) peer_optional_length = detail::read_int32(ptr);
+			else peer_optional_length = 0;
 
 			if (merkle)
 			{
@@ -1075,12 +1083,22 @@ namespace {
 					disconnect(errors::invalid_hash_list, operation_t::bittorrent, peer_error);
 					return;
 				}
-				p.length = m_recv_buffer.packet_size() - list_size - header_size;
+				if (peer_optional_length) {
+					p.length = peer_optional_length;
+					p.optional_length = m_recv_buffer.packet_size() - list_size - header_size;
+				} else {
+					p.length = m_recv_buffer.packet_size() - list_size - header_size;
+				}
 				header_size += list_size;
 			}
 			else
 			{
-				p.length = m_recv_buffer.packet_size() - header_size;
+				if (peer_optional_length) {
+					p.length = peer_optional_length;
+					p.optional_length = m_recv_buffer.packet_size() - header_size;
+				} else {
+					p.length = m_recv_buffer.packet_size() - header_size;
+				}
 			}
 		}
 		else
@@ -1130,7 +1148,12 @@ namespace {
 
 		incoming_piece_fragment(piece_bytes);
 		if (!m_recv_buffer.packet_finished()) return;
-
+		if (p.optional_length) {
+			TORRENT_ASSERT(p.length > p.optional_length);
+			// If the block data was compressed, we need to make up difference for statistic
+			received_bytes(p.length - p.optional_length, 0);
+			incoming_piece_fragment(p.length - p.optional_length);
+		}
 		if (merkle && list_size > 0)
 		{
 #ifndef TORRENT_DISABLE_LOGGING
@@ -1878,7 +1901,8 @@ namespace {
 		std::int64_t const stats_diff = statistics().last_payload_downloaded()
 			- cur_payload_dl + statistics().last_protocol_downloaded()
 			- cur_protocol_dl;
-		TORRENT_ASSERT(stats_diff == received);
+		// In here, the received data was compressed, but the stats already make up the difference
+		TORRENT_ASSERT(stats_diff >= received);
 #endif
 
 		bool const finished = m_recv_buffer.packet_finished();
@@ -2299,6 +2323,36 @@ namespace {
 		stats_counters().inc_stats_counter(counters::num_outgoing_extended);
 	}
 
+	void bt_peer_connection::try_compress_piece(peer_request const& r, disk_buffer_holder buffer)
+	{
+		std::size_t compressed_length = snappy_max_compressed_length(r.length);
+		char* compress_buf = (char*) std::malloc(compressed_length);
+		int stat_result = snappy_compress(buffer.data(), r.length, compress_buf, &compressed_length);
+		if (stat_result != SNAPPY_OK) {
+			std::free(compress_buf);
+			return write_piece(std::move(r), std::move(buffer));
+		}
+	
+		// If compress rate less than 2%, we give up compress it and transfer raw data block
+		if (int(compressed_length)>=r.length || r.length/(r.length-compressed_length)>50) {
+			std::free(compress_buf);
+			return write_piece(std::move(r), std::move(buffer));
+		}
+		peer_request new_r;
+		new_r.piece = r.piece;
+		new_r.start = r.start;
+		new_r.length = compressed_length;
+		new_r.optional_length = r.length;
+		buffer.reset(compress_buf, compressed_length);
+		buffer.setFree(1);
+#ifndef TORRENT_DISABLE_LOGGING
+		peer_log(peer_log_alert::info, "COMPRESSION",
+		         "Send compressed block=%d of piece=%d, raw_len=%d, compressed_len=%d",
+				 new_r.start, int(new_r.piece), new_r.optional_length, new_r.length);
+#endif
+		write_piece(std::move(new_r), std::move(buffer));
+	}
+
 	void bt_peer_connection::write_piece(peer_request const& r, disk_buffer_holder buffer)
 	{
 		INVARIANT_CHECK;
@@ -2317,16 +2371,23 @@ namespace {
 	// uint32_t list len
 	// var      bencoded list
 	// var      piece data
-		char msg[4 + 1 + 4 + 4 + 4];
+		char origin_head_msg[4 + 1 + 4 + 4 + 4];
+		char option_lenght_head_msg[4 + 1 + 4 + 4 + 4 + 4];
+
+		char* msg;
+		if (t->m_enable_compression) msg = option_lenght_head_msg;
+		else msg = origin_head_msg;
 		char* ptr = msg;
 		TORRENT_ASSERT(r.length <= 16 * 1024);
-		detail::write_int32(r.length + 1 + 4 + 4, ptr);
+		if (t->m_enable_compression) detail::write_int32(r.length + 1 + 4 + 4 + 4, ptr);
+		else detail::write_int32(r.length + 1 + 4 + 4, ptr);
 		if (m_settings.get_bool(settings_pack::support_merkle_torrents) && merkle)
 			detail::write_uint8(250, ptr);
 		else
 			detail::write_uint8(msg_piece, ptr);
 		detail::write_int32(static_cast<int>(r.piece), ptr);
 		detail::write_int32(r.start, ptr);
+		if (t->m_enable_compression) detail::write_int32(r.optional_length,  ptr);
 
 		// if this is a merkle torrent and the start offset
 		// is 0, we need to include the merkle node hashes
@@ -2351,12 +2412,14 @@ namespace {
 			detail::write_int32(r.length + 1 + 4 + 4 + 4 + int(piece_list_buf.size())
 				, ptr2);
 
-			send_buffer({msg, 17});
+			if (t->m_enable_compression) send_buffer({msg, 21});
+			else send_buffer({msg, 17});
 			send_buffer(piece_list_buf);
 		}
 		else
 		{
-			send_buffer({msg, 13});
+			if (t->m_enable_compression) send_buffer({msg, 17});
+			else send_buffer({msg, 13});
 		}
 
 		if (buffer.is_mutable())
@@ -2368,7 +2431,14 @@ namespace {
 			append_const_send_buffer(std::move(buffer), r.length);
 		}
 
-		m_payloads.emplace_back(send_buffer_size() - r.length, r.length);
+		if (r.optional_length == 0) {
+			m_payloads.emplace_back(send_buffer_size() - r.length, r.length, 0);
+		}
+		else {
+			TORRENT_ASSERT(r.optional_length > r.length);
+			// if the block data was compressed, we need to make up the difference for traffic statistics
+			m_payloads.emplace_back(send_buffer_size() - r.length, r.length, r.optional_length - r.length);
+		}
 		setup_send();
 
 		stats_counters().inc_stats_counter(counters::num_outgoing_piece);
@@ -3369,7 +3439,8 @@ namespace {
 			TORRENT_ASSERT(statistics().last_protocol_downloaded() - cur_protocol_dl >= 0);
 			std::int64_t const stats_diff = statistics().last_payload_downloaded() - cur_payload_dl +
 				statistics().last_protocol_downloaded() - cur_protocol_dl;
-			TORRENT_ASSERT(stats_diff == std::int64_t(bytes_transferred));
+			// In here, the transferred data was compressed, but the stats already make up the difference
+			TORRENT_ASSERT(stats_diff >= std::int64_t(bytes_transferred));
 			TORRENT_ASSERT(!m_recv_buffer.packet_finished());
 #endif
 			return;
@@ -3436,6 +3507,7 @@ namespace {
 						i->length -= -i->start;
 						i->start = 0;
 					}
+					sent_bytes(i->complement, 0);
 				}
 			}
 

@@ -129,10 +129,16 @@ int main(int argc, char* argv[]) try
 	lt::session ses(std::move(params));
 	lt::add_torrent_params p;
 	p.save_path = argv[1];
-	p.flags |= lt::torrent_flags::share_mode;
-    p.flags |= lt::torrent_flags::seed_mode;
+//	p.flags |= lt::torrent_flags::share_mode;
+//    p.flags |= lt::torrent_flags::seed_mode;
 	p.ti = std::make_shared<lt::torrent_info>(argv[2]);
 	p.group_members = argv[5];
+	std::string enable_compression(argv[4]);
+	if (enable_compression == "true" || enable_compression == "True" || enable_compression == "TRUE") {
+		p.enable_compression = true;
+	} else {
+		p.enable_compression = false;
+	}
 	auto handle = ses.add_torrent(p);
 
 	while (!(handle.is_finished() && auto_exit))
