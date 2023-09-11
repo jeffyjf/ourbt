@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 Copyright (c) 2007-2018, Arvid Norberg, Steven Siloti
 All rights reserved.
@@ -29,6 +29,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 */
+
+#include <snappy-c.h>
+
+#include  "iostream"
 
 #include "libtorrent/config.hpp"
 #include "libtorrent/storage.hpp"
@@ -1732,7 +1736,37 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 		bool exceeded = false;
 		disk_buffer_holder buffer(*this, m_disk_cache.allocate_buffer(exceeded, o, "receive buffer"), 0x4000);
 		if (!buffer) aux::throw_ex<std::bad_alloc>();
-		std::memcpy(buffer.get(), buf, aux::numeric_cast<std::size_t>(r.length));
+		if (r.optional_length) {
+			DLOG("Uncompress block data, piece: %d start: %d compressed_len: %d raw_len: %d\n",
+				 int(r.piece), r.start, r.optional_length, r.length);
+			std::size_t uncompress_len;
+			int stat_res = snappy_uncompressed_length(buf, r.optional_length, &uncompress_len);
+			if (stat_res != SNAPPY_OK) {
+				if (stat_res == SNAPPY_INVALID_INPUT) {
+					handler(storage_error(errors::snappy_invalid_input));
+				}
+				if  (stat_res == SNAPPY_BUFFER_TOO_SMALL) {
+					handler(storage_error(errors::snappy_buffer_too_small));
+				}
+				return exceeded;
+			}
+			std::vector<char> tmp_buf;
+			tmp_buf.resize(uncompress_len);
+			stat_res = snappy_uncompress(buf, r.optional_length, tmp_buf.data(), &uncompress_len);
+			if (stat_res != SNAPPY_OK) {
+				if (stat_res == SNAPPY_INVALID_INPUT) {
+					handler(storage_error(errors::snappy_invalid_input));
+				}
+				if  (stat_res == SNAPPY_BUFFER_TOO_SMALL) {
+					handler(storage_error(errors::snappy_buffer_too_small));
+				}
+				return exceeded;
+			}
+			TORRENT_ASSERT(r.length==int(uncompress_len));
+			std::memcpy(buffer.get(), tmp_buf.data(), aux::numeric_cast<std::size_t>(r.length));
+		} else {
+			std::memcpy(buffer.get(), buf, aux::numeric_cast<std::size_t>(r.length));
+		}
 
 		disk_io_job* j = allocate_job(job_action_t::write);
 		j->storage = m_torrents[storage]->shared_from_this();
@@ -3460,6 +3494,32 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 			}
 		}
 
+		//if (m_settings.get_bool(settings_pack::enable_piece_compression_transmission)) 
+		//{
+		//	for (auto i = completed_jobs.iterate(); i.get(); i.next())
+		//	{
+		//		disk_io_job* j = static_cast<disk_io_job*>(i.get());
+		//		printf("compresse thread id:%ld\n", std::this_thread::get_id());
+		//		auto& buffer = boost::get<disk_buffer_holder>(j->argument);
+		//		size_t len = buffer.size();
+		//		std::size_t compressed_length = snappy_max_compressed_length(len);
+		//		char* compress_buf = (char*)std::malloc(compressed_length);
+		//		int stat_result = snappy_compress(buffer.data(), len, compress_buf, &compressed_length);
+		//		if (stat_result != SNAPPY_OK) {
+		//			std::free(compress_buf);
+		//			printf("compresse error\n");
+		//			continue;
+		//		}
+		//		if (compressed_length >= len || len / (len - compressed_length) > 10) {
+		//			std::free(compress_buf);
+		//			printf("compress rate less than 10% \n");
+		//			continue;
+		//		}
+		//		buffer.reset(compress_buf, compressed_length);
+		//		buffer.setFree(1);
+		//	}
+		//}
+		
 		std::lock_guard<std::mutex> l(m_completed_jobs_mutex);
 		m_completed_jobs.append(jobs);
 

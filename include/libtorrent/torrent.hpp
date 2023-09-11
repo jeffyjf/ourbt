@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 Copyright (c) 2003-2018, Arvid Norberg
 All rights reserved.
@@ -1435,6 +1435,8 @@ namespace libtorrent {
 		// class that torrent can inherit)
 		aux::array<link, aux::session_interface::num_torrent_lists, torrent_list_index_t>
 			m_links;
+
+		bool m_enable_compression:1;
 
 	private:
 

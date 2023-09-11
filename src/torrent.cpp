@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 Copyright (c) 2003-2018, Arvid Norberg
 All rights reserved.
@@ -190,6 +190,7 @@ bool is_downloading_state(int const st)
 		, m_last_seen_complete(p.last_seen_complete)
 		, m_swarm_last_seen_complete(p.last_seen_complete)
 		, m_info_hash(p.info_hash)
+		, m_enable_compression(p.enable_compression)
 		, m_error_file(torrent_status::error_file_none)
 		, m_sequence_number(-1)
 		, m_peer_id(aux::generate_peer_id(settings()))
