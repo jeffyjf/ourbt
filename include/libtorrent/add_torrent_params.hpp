@@ -375,7 +375,7 @@ TORRENT_VERSION_NAMESPACE_2
 		error_code internal_resume_data_error;
 #endif // TORRENT_ABI_VERSION
 
-		bool enable_compression:1;
+		bool enable_compression = false;
 
 	};
 
