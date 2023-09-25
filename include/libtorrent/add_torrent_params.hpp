@@ -377,6 +377,8 @@ TORRENT_VERSION_NAMESPACE_2
 
 		bool enable_compression = false;
 
+		bool disable_full_check = false;
+
 		std::string group_members;
 
 		std::string upload_white_list;

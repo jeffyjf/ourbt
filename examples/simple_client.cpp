@@ -41,6 +41,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/torrent_info.hpp"
 #include "libtorrent/alert.hpp"
 #include "libtorrent/settings_pack.hpp"
+#include "libtorrent/torrent_status.hpp"
+#include "libtorrent/storage_defs.hpp"
 
 using namespace libtorrent;
 
@@ -129,8 +131,8 @@ int main(int argc, char* argv[]) try
 	lt::session ses(std::move(params));
 	lt::add_torrent_params p;
 	p.save_path = argv[1];
-//	p.flags |= lt::torrent_flags::share_mode;
-//    p.flags |= lt::torrent_flags::seed_mode;
+	//p.flags |= lt::torrent_flags::share_mode;
+    //p.flags |= lt::torrent_flags::seed_mode;
 	p.ti = std::make_shared<lt::torrent_info>(argv[2]);
 	p.group_members = argv[7];
 	std::string enable_compression(argv[4]);
@@ -141,6 +143,17 @@ int main(int argc, char* argv[]) try
 	}
 	p.upload_white_list = argv[6];
 	auto handle = ses.add_torrent(p);
+
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    for (auto torrent: ses.get_torrents()) {
+        auto ts = torrent.status(lt::torrent_handle::query_save_path);
+        if (ts.state == lt::torrent_status::checking_files) {
+            std::cout << "xxxxxxxxxxxx checking files" << std::endl;
+	    } else {
+        	std::cout << "xxxxxxxxxxxx not checking files" << std::endl;
+		}
+	}
 
 	while (!(handle.is_finished() && auto_exit))
 	{

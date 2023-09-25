@@ -191,6 +191,7 @@ bool is_downloading_state(int const st)
 		, m_swarm_last_seen_complete(p.last_seen_complete)
 		, m_info_hash(p.info_hash)
 		, m_enable_compression(p.enable_compression)
+		, m_disable_full_check(p.disable_full_check)
 		, m_error_file(torrent_status::error_file_none)
 		, m_sequence_number(-1)
 		, m_peer_id(aux::generate_peer_id(settings()))
@@ -2348,7 +2349,7 @@ bool is_downloading_state(int const st)
 			update_state_list();
 		}
 
-		if (should_start_full_check)
+		if (!m_disable_full_check && should_start_full_check)
 		{
 			set_state(torrent_status::checking_files);
 			if (should_check_files()) start_checking();

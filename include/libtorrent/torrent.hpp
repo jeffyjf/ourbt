@@ -1438,6 +1438,8 @@ namespace libtorrent {
 
 		bool m_enable_compression:1;
 
+		bool m_disable_full_check:1;
+
 		std::vector<address_v4> m_group_members;
 
 		std::vector<address_v4> m_upload_white_list;
