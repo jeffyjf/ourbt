@@ -191,6 +191,44 @@ namespace libtorrent {
 		return in;
 	}
 
+	std::vector<address_v4> parse_group_members_list(std::string const& in)
+	{
+		std::vector<address_v4> out;
+		string_view rest = in;
+		while (!rest.empty())
+		{
+			string_view element;
+			std::tie(element, rest) = split_string_quotes(rest, ',');
+
+			element = strip_string(element);
+			if (element.size() > 1 && element.front() == '"' && element.back() == '"')
+				element = element.substr(1, element.size() - 2);
+			if (element.empty()) continue;
+
+			out.push_back(address_v4::from_string(element.to_string()));
+		}
+		return out;
+	}
+
+	std::vector<address_v4> parse_upload_white_list(std::string const& in)
+	{
+		std::vector<address_v4> out;
+		string_view rest = in;
+		while (!rest.empty())
+		{
+			string_view element;
+			std::tie(element, rest) = split_string_quotes(rest, ',');
+
+			element = strip_string(element);
+			if (element.size() > 1 && element.front() == '"' && element.back() == '"')
+				element = element.substr(1, element.size() - 2);
+			if (element.empty()) continue;
+
+			out.push_back(address_v4::from_string(element.to_string()));
+		}
+		return out;
+	}
+
 	// this parses the string that's used as the listen_interfaces setting.
 	// it is a comma-separated list of IP or device names with ports. For
 	// example: "eth0:6881,eth1:6881" or "127.0.0.1:6881"

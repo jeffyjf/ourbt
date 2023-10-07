@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 Copyright (c) 2003-2018, Arvid Norberg
 All rights reserved.
@@ -311,6 +311,10 @@ namespace aux {
 		{ m_exceeded_limit = false; }
 
 		void send_allowed_set();
+
+		bool is_group_member() const {
+			return m_is_group_member;
+		}
 
 #ifndef TORRENT_DISABLE_EXTENSIONS
 		void add_extension(std::shared_ptr<peer_plugin>);
@@ -702,6 +706,7 @@ namespace aux {
 		virtual void write_have(piece_index_t index) = 0;
 		virtual void write_dont_have(piece_index_t index) = 0;
 		virtual void write_keepalive() = 0;
+		virtual void try_compress_piece(peer_request const& r, disk_buffer_holder buffer) = 0;
 		virtual void write_piece(peer_request const& r, disk_buffer_holder buffer) = 0;
 		virtual void write_suggest(piece_index_t piece) = 0;
 		virtual void write_bitfield() = 0;
@@ -1140,6 +1145,8 @@ namespace aux {
 		// message is received. This information
 		// is used to fill the bitmask in init()
 		bool m_have_all:1;
+
+		bool m_is_group_member:1;
 
 		// other side says that it's interested in downloading
 		// from us.

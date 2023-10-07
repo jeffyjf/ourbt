@@ -375,6 +375,13 @@ TORRENT_VERSION_NAMESPACE_2
 		error_code internal_resume_data_error;
 #endif // TORRENT_ABI_VERSION
 
+		bool enable_compression = false;
+
+		bool disable_full_check = false;
+
+		std::string group_members;
+
+		std::string upload_white_list;
 	};
 
 TORRENT_VERSION_NAMESPACE_2_END

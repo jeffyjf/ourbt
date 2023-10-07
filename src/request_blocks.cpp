@@ -30,6 +30,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include "iostream"
+
 #include "libtorrent/bitfield.hpp"
 #include "libtorrent/peer_connection.hpp"
 #include "libtorrent/torrent.hpp"
@@ -237,6 +239,11 @@ namespace libtorrent {
 
 				TORRENT_ASSERT(p.num_peers(pb) > 0);
 				busy_block = pb;
+				continue;
+			}
+
+			if (!c.is_group_member() && p.piece_member_have(pb.piece_index)) {
+				c.peer_log(peer_log_alert::info, "PIECE_PICKER", "skip piece: %d request", pb.piece_index);
 				continue;
 			}
 

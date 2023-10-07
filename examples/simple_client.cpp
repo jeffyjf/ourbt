@@ -41,6 +41,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/torrent_info.hpp"
 #include "libtorrent/alert.hpp"
 #include "libtorrent/settings_pack.hpp"
+#include "libtorrent/torrent_status.hpp"
+#include "libtorrent/storage_defs.hpp"
 
 using namespace libtorrent;
 
@@ -70,8 +72,8 @@ void pop_alerts(lt::session& ses)
 
 int main(int argc, char* argv[]) try
 {
-	if (argc != 6) {
-		std::cerr << "usage: ./simple_client <save path> <torrent seed file> <log file path> <whether enable compression> <whether auto exit>\n";
+	if (argc != 8) {
+		std::cerr << "usage: ./simple_client <save path> <torrent seed file> <log file path> <whether enable compression> <whether auto exit> <white upload list> <group members>\n";
 		return 1;
 	}
 
@@ -97,13 +99,6 @@ int main(int argc, char* argv[]) try
 		g_log_file = std::fopen(log_file_path.c_str(), "a+");
 	}
 
-	std::string enable_compression(argv[4]);
-	if (enable_compression == "true" || enable_compression == "True" || enable_compression == "TRUE") {
-		settings.set_bool(lt::settings_pack::enable_piece_compression_transmission, true);
-	} else {
-		settings.set_bool(lt::settings_pack::enable_piece_compression_transmission, false);
-	}
-
 	bool auto_exit;
 	std::string s_auto_exit(argv[5]);
 	if (s_auto_exit == "true" || s_auto_exit == "True" || s_auto_exit == "True") {
@@ -111,8 +106,6 @@ int main(int argc, char* argv[]) try
 	} else {
 		auto_exit = false;
 	}
-
-
 
 	settings.set_int(settings_pack::alert_mask
 		, alert_category::error
@@ -138,10 +131,29 @@ int main(int argc, char* argv[]) try
 	lt::session ses(std::move(params));
 	lt::add_torrent_params p;
 	p.save_path = argv[1];
-	p.flags |= lt::torrent_flags::share_mode;
-    p.flags |= lt::torrent_flags::seed_mode;
+	//p.flags |= lt::torrent_flags::share_mode;
+    //p.flags |= lt::torrent_flags::seed_mode;
 	p.ti = std::make_shared<lt::torrent_info>(argv[2]);
+	p.group_members = argv[7];
+	std::string enable_compression(argv[4]);
+	if (enable_compression == "true" || enable_compression == "True" || enable_compression == "TRUE") {
+		p.enable_compression = true;
+	} else {
+		p.enable_compression = false;
+	}
+	p.upload_white_list = argv[6];
 	auto handle = ses.add_torrent(p);
+
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    for (auto torrent: ses.get_torrents()) {
+        auto ts = torrent.status(lt::torrent_handle::query_save_path);
+        if (ts.state == lt::torrent_status::checking_files) {
+            std::cout << "xxxxxxxxxxxx checking files" << std::endl;
+	    } else {
+        	std::cout << "xxxxxxxxxxxx not checking files" << std::endl;
+		}
+	}
 
 	while (!(handle.is_finished() && auto_exit))
 	{
