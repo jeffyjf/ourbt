@@ -885,6 +885,11 @@ namespace aux {
 		time_point m_last_receive = aux::time_now();
 		time_point m_last_sent = aux::time_now();
 
+		time_point m_last_receive_start = aux::time_now();
+		time_point m_last_receive_end = aux::time_now();
+		time_point m_last_send_start = aux::time_now();
+		time_point m_last_send_end = aux::time_now();
+
 		// the last time we filled our send buffer with payload
 		// this is used for timeouts
 		time_point m_last_sent_payload = aux::time_now();

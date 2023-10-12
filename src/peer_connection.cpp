@@ -5768,6 +5768,7 @@ namespace libtorrent {
 #endif
 
 		auto conn = self();
+		m_last_send_start = aux::time_now();
 		m_socket->async_write_some(vec, make_handler(
 				std::bind(&peer_connection::on_send_data, conn, _1, _2)
 				, m_write_handler_storage, *this));
@@ -5853,6 +5854,7 @@ namespace libtorrent {
 
 		ADD_OUTSTANDING_ASYNC("peer_connection::on_receive_data");
 		auto conn = self();
+		m_last_receive_start = aux::time_now();
 		m_socket->async_read_some(
 			boost::asio::mutable_buffers_1(vec.data(), std::size_t(vec.size())), make_handler(
 				std::bind(&peer_connection::on_receive_data, conn, _1, _2)
@@ -6044,6 +6046,16 @@ namespace libtorrent {
 				}
 			}
 		}
+		m_recv_buffer.packet_bytes_remaining();
+		auto tmp_now = aux::time_now();
+		peer_log(peer_log_alert::incoming, "performance debug"
+				, "buffer_bytes_remaning: %d, recv_buffer capacity: %d, bytes_transferred: %ld, start to end duration: %ld, end to end duration: %ld, fist rate: %ld, second rate: %ld",
+				m_recv_buffer.buffer_bytes_remaning(), m_recv_buffer.capacity(), bytes_transferred,
+				(tmp_now - m_last_receive_start).count(),
+				(tmp_now - m_last_receive_end).count(),
+				bytes_transferred * 1000 / ((tmp_now - m_last_receive_start).count()),
+				bytes_transferred * 1000 / ((tmp_now - m_last_receive_end).count()));
+		m_last_receive_end = std::move(tmp_now);
 
 		// feed bytes in receive buffer to upper layer by calling on_receive()
 
@@ -6285,7 +6297,6 @@ namespace libtorrent {
 		std::shared_ptr<peer_connection> me(self());
 
 		TORRENT_ASSERT(m_channel_state[upload_channel] & peer_info::bw_network);
-
 		m_send_buffer.pop_front(int(bytes_transferred));
 
 		time_point const now = clock_type::now();
@@ -6334,6 +6345,16 @@ namespace libtorrent {
 			m_send_buffer.clear();
 			return;
 		}
+
+		auto tmp_now = aux::time_now();
+		peer_log(peer_log_alert::outgoing, "performance debug"
+				, "send_buffer_remaning: %d, bytes_transferred: %ld, start to end duration: %ld, end to end duration: %ld, fist rate: %ld, second rate: %ld",
+				m_send_buffer.size(), bytes_transferred,
+				(tmp_now - m_last_send_start).count(),
+				(tmp_now - m_last_send_end).count(),
+				bytes_transferred * 1000 / ((tmp_now - m_last_send_start).count()),
+				bytes_transferred * 1000 / ((tmp_now - m_last_send_end).count()));
+		m_last_send_end = tmp_now;
 
 		TORRENT_ASSERT(!m_connecting);
 		TORRENT_ASSERT(bytes_transferred > 0);

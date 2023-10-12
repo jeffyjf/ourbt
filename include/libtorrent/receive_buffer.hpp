@@ -54,6 +54,12 @@ struct TORRENT_EXTRA_EXPORT receive_buffer
 		return m_packet_size - m_recv_pos;
 	}
 
+	int buffer_bytes_remaning() const
+	{
+		TORRENT_ASSERT(m_recv_end >= m_recv_start);
+		return m_recv_end - m_recv_start;
+	}
+
 	int max_receive() const;
 
 	bool packet_finished() const { return m_packet_size <= m_recv_pos; }
