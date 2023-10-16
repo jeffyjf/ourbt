@@ -208,6 +208,7 @@ constexpr disk_job_flags_t disk_interface::force_copy;
 constexpr disk_job_flags_t disk_interface::sequential_access;
 constexpr disk_job_flags_t disk_interface::volatile_read;
 constexpr disk_job_flags_t disk_interface::cache_hit;
+constexpr disk_job_flags_t disk_interface::enable_compress;
 
 // ------- disk_io_thread ------
 
@@ -1336,7 +1337,6 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 			if (pe != nullptr) maybe_issue_queued_read_jobs(pe, completed_jobs);
 			return s;
 		}
-
 		// free buffers at the end of the scope
 		auto iov_dealloc = aux::scope_end([&]{ m_disk_cache.free_iovec(iov); });
 
@@ -1375,7 +1375,6 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 		}
 
 		l.lock();
-
 		if (ret < 0)
 		{
 			pe = m_disk_cache.find_piece(j);
@@ -1734,48 +1733,29 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 		TORRENT_ASSERT(buf != nullptr);
 
 		bool exceeded = false;
-		disk_buffer_holder buffer(*this, m_disk_cache.allocate_buffer(exceeded, o, "receive buffer"), 0x4000);
-		if (!buffer) aux::throw_ex<std::bad_alloc>();
-		if (r.optional_length) {
-			DLOG("Uncompress block data, piece: %d start: %d compressed_len: %d raw_len: %d\n",
-				 int(r.piece), r.start, r.optional_length, r.length);
-			std::size_t uncompress_len;
-			int stat_res = snappy_uncompressed_length(buf, r.optional_length, &uncompress_len);
-			if (stat_res != SNAPPY_OK) {
-				if (stat_res == SNAPPY_INVALID_INPUT) {
-					handler(storage_error(errors::snappy_invalid_input));
-				}
-				if  (stat_res == SNAPPY_BUFFER_TOO_SMALL) {
-					handler(storage_error(errors::snappy_buffer_too_small));
-				}
-				return exceeded;
-			}
-			std::vector<char> tmp_buf;
-			tmp_buf.resize(uncompress_len);
-			stat_res = snappy_uncompress(buf, r.optional_length, tmp_buf.data(), &uncompress_len);
-			if (stat_res != SNAPPY_OK) {
-				if (stat_res == SNAPPY_INVALID_INPUT) {
-					handler(storage_error(errors::snappy_invalid_input));
-				}
-				if  (stat_res == SNAPPY_BUFFER_TOO_SMALL) {
-					handler(storage_error(errors::snappy_buffer_too_small));
-				}
-				return exceeded;
-			}
-			TORRENT_ASSERT(r.length==int(uncompress_len));
-			std::memcpy(buffer.get(), tmp_buf.data(), aux::numeric_cast<std::size_t>(r.length));
-		} else {
-			std::memcpy(buffer.get(), buf, aux::numeric_cast<std::size_t>(r.length));
-		}
-
+		
 		disk_io_job* j = allocate_job(job_action_t::write);
 		j->storage = m_torrents[storage]->shared_from_this();
 		j->piece = r.piece;
 		j->d.io.offset = r.start;
-		j->d.io.buffer_size = std::uint16_t(r.length);
-		j->argument = std::move(buffer);
-		j->callback = std::move(handler);
-		j->flags = flags;
+		if (r.optional_length) {
+			disk_buffer_holder buffer(*this, m_disk_cache.allocate_buffer(exceeded, o, "receive buffer"), r.optional_length);
+			if (!buffer) aux::throw_ex<std::bad_alloc>();
+			buffer.setCompressed();
+			std::memcpy(buffer.get(), buf, aux::numeric_cast<std::size_t>(r.optional_length));
+			j->d.io.buffer_size = std::uint16_t(r.optional_length);
+			j->argument = std::move(buffer);
+			j->callback = std::move(handler);
+			j->flags = flags;
+		} else {
+			disk_buffer_holder buffer(*this, m_disk_cache.allocate_buffer(exceeded, o, "receive buffer"), 0x4000);
+			if (!buffer) aux::throw_ex<std::bad_alloc>();
+			std::memcpy(buffer.get(), buf, aux::numeric_cast<std::size_t>(r.length));
+			j->d.io.buffer_size = std::uint16_t(r.length);
+			j->argument = std::move(buffer);
+			j->callback = std::move(handler);
+			j->flags = flags;
+		}
 
 #if TORRENT_USE_ASSERTS
 		std::unique_lock<std::mutex> l3_(m_cache_mutex);
@@ -1845,7 +1825,6 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 			return exceeded;
 		}
 		l.unlock();
-
 		add_job(j);
 		return exceeded;
 	}
@@ -1884,6 +1863,7 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 			return;
 		}
 		l.unlock();
+
 		add_job(j);
 	}
 
@@ -2083,7 +2063,30 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 		for (int i = cursor; i < pe->blocks_in_piece; ++i)
 		{
 			cached_block_entry& bl = pe->blocks[i];
-			if (bl.buf == nullptr) break;
+			if (bl.buf == nullptr)
+			{
+				if (bl.compressed_buf == nullptr)
+					break;
+				std::size_t uncompress_len;
+				int stat_res = snappy_uncompressed_length(bl.compressed_buf, bl.compressed_buf_size, &uncompress_len);
+				if (stat_res != SNAPPY_OK) {
+					if (stat_res == SNAPPY_INVALID_INPUT)
+						aux::throw_ex<system_error>(errors::snappy_invalid_input);
+					if (stat_res == SNAPPY_BUFFER_TOO_SMALL)
+						aux::throw_ex<system_error>(errors::snappy_buffer_too_small);
+				}
+				char* uncompress_buf = (char *)std::malloc(uncompress_len);
+				stat_res = snappy_uncompress(bl.compressed_buf, bl.compressed_buf_size, uncompress_buf, &uncompress_len);
+				if (stat_res != SNAPPY_OK) {
+					std::free(uncompress_buf);
+					if (stat_res == SNAPPY_INVALID_INPUT)
+						aux::throw_ex<system_error>(errors::snappy_invalid_input);
+					if (stat_res == SNAPPY_BUFFER_TOO_SMALL)
+						aux::throw_ex<system_error>(errors::snappy_buffer_too_small);
+					aux::throw_ex<system_error>(errors::snappy_unknow_error);
+				}
+				bl.buf = uncompress_buf;
+			}
 
 			// if we fail to lock the block, it' no longer in the cache
 			if (m_disk_cache.inc_block_refcount(pe, i, block_cache::ref_hashing) == false)
@@ -2537,7 +2540,6 @@ constexpr disk_job_flags_t disk_interface::cache_hit;
 #endif
 			m_disk_cache.update_cache_state(pe);
 		}
-
 		m_disk_cache.maybe_free_piece(pe);
 
 		TORRENT_ASSERT(ret == status_t::no_error || (j->error.ec && j->error.operation != operation_t::unknown));

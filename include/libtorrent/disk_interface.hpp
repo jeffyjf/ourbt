@@ -140,6 +140,8 @@ namespace libtorrent {
 		// not hit the disk, but found the data in the read cache.
 		static constexpr disk_job_flags_t cache_hit = 5_bit;
 
+		static constexpr disk_job_flags_t enable_compress = 7_bit;
+
 		virtual storage_holder new_torrent(storage_constructor_type sc
 			, storage_params p, std::shared_ptr<void> const&) = 0;
 		virtual void remove_torrent(storage_index_t) = 0;

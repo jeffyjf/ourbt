@@ -82,14 +82,16 @@ int main(int argc, char* argv[]) try
 
 	settings = lt::high_performance_seed();
 	settings.set_int(settings_pack::cache_size, -1);
+	// settings.set_int(settings_pack::disk_io_read_mode, settings_pack::disable_os_cache);
+	// settings.set_int(settings_pack::disk_io_write_mode, settings_pack::disable_os_cache);
 	settings.set_int(settings_pack::choking_algorithm, settings_pack::rate_based_choker);
 	settings.set_bool(settings_pack::enable_incoming_utp, false);
 	settings.set_bool(settings_pack::enable_outgoing_utp, false);
 	settings.set_bool(settings_pack::enable_incoming_tcp, true);
 	settings.set_bool(settings_pack::enable_outgoing_tcp, true);
 	settings.set_bool(settings_pack::enable_dht, false);
-	settings.set_int(settings_pack::max_allowed_in_request_queue, 20000);
-    settings.set_int(settings_pack::max_out_request_queue, 20000);
+	settings.set_int(settings_pack::max_allowed_in_request_queue, 500000);
+    settings.set_int(settings_pack::max_out_request_queue, 500000);
 	settings.set_bool(settings_pack::smooth_connects, false);
 	settings.set_bool(settings_pack::auto_sequential, false);
 	settings.set_int(settings_pack::aio_threads, 30);
@@ -121,8 +123,8 @@ int main(int argc, char* argv[]) try
 		| alert_category::stats
 		| alert_category::session_log
 		| alert_category::torrent_log
-		| alert_category::peer_log
-		| alert_category::incoming_request
+		// | alert_category::peer_log
+		// | alert_category::incoming_request
 		| alert_category::dht_operation
 		| alert_category::port_mapping_log
 		| alert_category::file_progress);
@@ -160,6 +162,9 @@ int main(int argc, char* argv[]) try
 		libtorrent::alert const* a = ses.wait_for_alert(std::chrono::seconds(2));
 		if (a == nullptr) continue;
 		pop_alerts(ses);
+	}
+	if (handle.is_finished()) {
+		std::cout << "xxxxxxxxxxxxxxx finished" << std::endl;
 	}
 }
 catch (std::exception const& e) {

@@ -46,14 +46,14 @@ namespace libtorrent {
 		// the offset within that piece where the range starts.
 		int start;
 		// the size of the range, in bytes.
-		int length;
+		mutable int length;
 		// Some encrytion algorithms and compression algorithms
 		// will change the length of data block. In send side, the
 		// peer will encrypt or compress raw data block, optional_length
 		// used to record the raw length. In receive size, the peer will
 		// decrypt or uncompress data block, optional_length used to record
 		// the encrypted or compressed data block length.
-		int optional_length = 0;
+		mutable int optional_length = 0;
 
 		// returns true if the right hand side peer_request refers to the same
 		// range as this does.

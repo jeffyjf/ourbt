@@ -5295,7 +5295,12 @@ namespace libtorrent {
 				// this means we're in seed mode and we haven't yet
 				// verified this piece (r.piece)
 				auto conn = self();
-				m_disk_thread.async_hash(t->storage(), r.piece, {}
+				
+				disk_job_flags_t flag;
+				if (t->m_enable_compression) {
+					flag |= disk_interface::enable_compress;
+				}
+				m_disk_thread.async_hash(t->storage(), r.piece, flag
 					, [conn](piece_index_t p, sha1_hash const& ph, storage_error const& e) {
 					conn->wrap(&peer_connection::on_seed_mode_hashed, p, ph, e); });
 				t->verifying(r.piece);
@@ -5336,9 +5341,11 @@ namespace libtorrent {
 				TORRENT_ASSERT(r.piece < t->torrent_file().end_piece());
 
 				auto conn = self();
+				disk_job_flags_t flag;
+				if (t->m_enable_compression) flag |= disk_interface::enable_compress;
 				m_disk_thread.async_read(t->storage(), r
 					, [conn, r](disk_buffer_holder buf, disk_job_flags_t f, storage_error const& ec)
-					{ conn->wrap(&peer_connection::on_disk_read_complete, std::move(buf), f, ec, r, clock_type::now()); });
+					{ conn->wrap(&peer_connection::on_disk_read_complete, std::move(buf), f, ec, r, clock_type::now()); }, flag);
 			}
 			m_last_sent_payload = clock_type::now();
 			m_requests.erase(m_requests.begin() + i);
@@ -5493,11 +5500,7 @@ namespace libtorrent {
 		{
 			t->add_suggest_piece(r.piece);
 		}
-		if (t->m_enable_compression) {
-			try_compress_piece(r, std::move(buffer));
-		} else {
-			write_piece(r, std::move(buffer));
-		}
+		write_piece(r, std::move(buffer));
 	}
 
 	void peer_connection::assign_bandwidth(int const channel, int const amount)

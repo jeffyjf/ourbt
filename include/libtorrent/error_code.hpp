@@ -459,6 +459,8 @@ namespace libtorrent {
 			// The output buffer is too small when compress or decompress block data
 			snappy_buffer_too_small,
 
+			snappy_unknow_error,
+
 			// the number of error codes
 			error_code_max
 		};
