@@ -1196,7 +1196,13 @@ namespace {
 				return;
 			}
 		}
-
+#ifndef TORRENT_DISABLE_LOGGING
+		if (p.optional_length != 0) {
+			peer_log(peer_log_alert::info, "COMPRESSION",
+					"Receive compressed block=%d of piece=%d, raw_len=%d, compressed_len=%d",
+			p.start, int(p.piece), p.length, p.optional_length);
+		}
+#endif
 		incoming_piece(p, recv_buffer.data() + header_size);
 	}
 
@@ -2323,36 +2329,6 @@ namespace {
 		stats_counters().inc_stats_counter(counters::num_outgoing_extended);
 	}
 
-	void bt_peer_connection::try_compress_piece(peer_request const& r, disk_buffer_holder buffer)
-	{
-		std::size_t compressed_length = snappy_max_compressed_length(r.length);
-		char* compress_buf = (char*) std::malloc(compressed_length);
-		int stat_result = snappy_compress(buffer.data(), r.length, compress_buf, &compressed_length);
-		if (stat_result != SNAPPY_OK) {
-			std::free(compress_buf);
-			return write_piece(std::move(r), std::move(buffer));
-		}
-	
-		// If compress rate less than 2%, we give up compress it and transfer raw data block
-		if (int(compressed_length)>=r.length || r.length/(r.length-compressed_length)>50) {
-			std::free(compress_buf);
-			return write_piece(std::move(r), std::move(buffer));
-		}
-		peer_request new_r;
-		new_r.piece = r.piece;
-		new_r.start = r.start;
-		new_r.length = compressed_length;
-		new_r.optional_length = r.length;
-		buffer.reset(compress_buf, compressed_length);
-		buffer.setFree(1);
-#ifndef TORRENT_DISABLE_LOGGING
-		peer_log(peer_log_alert::info, "COMPRESSION",
-		         "Send compressed block=%d of piece=%d, raw_len=%d, compressed_len=%d",
-				 new_r.start, int(new_r.piece), new_r.optional_length, new_r.length);
-#endif
-		write_piece(std::move(new_r), std::move(buffer));
-	}
-
 	void bt_peer_connection::write_piece(peer_request const& r, disk_buffer_holder buffer)
 	{
 		INVARIANT_CHECK;
@@ -2375,8 +2351,20 @@ namespace {
 		char option_lenght_head_msg[4 + 1 + 4 + 4 + 4 + 4];
 
 		char* msg;
-		if (t->m_enable_compression) msg = option_lenght_head_msg;
-		else msg = origin_head_msg;
+		if (t->m_enable_compression) {
+			if (int(buffer.size()) < r.length) {
+				r.optional_length = r.length;
+				r.length = int(buffer.size());
+#ifndef TORRENT_DISABLE_LOGGING
+                peer_log(peer_log_alert::info, "COMPRESSION",
+                         "Send compressed block=%d of piece=%d, raw_len=%d, compressed_len=%d",
+                         r.start, int(r.piece), r.optional_length, r.length);
+#endif
+			}
+			msg = option_lenght_head_msg;
+		} else {
+			msg = origin_head_msg;
+		}
 		char* ptr = msg;
 		TORRENT_ASSERT(r.length <= 16 * 1024);
 		if (t->m_enable_compression) detail::write_int32(r.length + 1 + 4 + 4 + 4, ptr);

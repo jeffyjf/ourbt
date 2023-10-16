@@ -133,6 +133,9 @@ namespace aux {
 
 		char* buf = nullptr;
 
+		char* compressed_buf = nullptr;
+		std::size_t compressed_buf_size = 0;
+
 		static constexpr int max_refcount = (1 << 29) - 1;
 
 		// the number of references to this buffer. These references

@@ -10559,8 +10559,6 @@ bool is_downloading_state(int const st)
 	{
 //		picker().mark_as_checking(piece);
 
-		TORRENT_ASSERT(m_storage);
-
 		m_ses.disk_thread().async_hash(m_storage, piece, {}
 			, std::bind(&torrent::on_piece_verified, shared_from_this(), _1, _2, _3));
 	}

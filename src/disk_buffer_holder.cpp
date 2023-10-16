@@ -36,7 +36,7 @@ namespace libtorrent {
 
 	disk_buffer_holder::disk_buffer_holder(buffer_allocator_interface& alloc
 		, char* buf, std::size_t sz) noexcept
-		: m_allocator(&alloc), m_buf(buf), m_size((std::uint32_t)sz), m_manual(0), m_ref()
+		: m_allocator(&alloc), m_buf(buf), m_size((std::uint32_t)sz), m_ref()
 	{}
 
 	disk_buffer_holder& disk_buffer_holder::operator=(disk_buffer_holder&& h) & noexcept
@@ -47,7 +47,7 @@ namespace libtorrent {
 	}
 
 	disk_buffer_holder::disk_buffer_holder(disk_buffer_holder&& h) noexcept
-		: m_allocator(h.m_allocator), m_buf(h.m_buf), m_size(h.m_size), m_manual(h.m_manual), m_ref(h.m_ref)
+		: m_allocator(h.m_allocator), m_buf(h.m_buf), m_size(h.m_size), m_ref(h.m_ref), m_compressed(h.m_compressed)
 	{
 		// we own this buffer now
 		h.m_buf = nullptr;
@@ -57,17 +57,13 @@ namespace libtorrent {
 	disk_buffer_holder::disk_buffer_holder(buffer_allocator_interface& alloc
 		, aux::block_cache_reference const& ref, char* buf
 		, std::size_t sz) noexcept
-		: m_allocator(&alloc), m_buf(buf), m_size((std::uint32_t)sz), m_manual(0), m_ref(ref)
+		: m_allocator(&alloc), m_buf(buf), m_size((std::uint32_t)sz), m_ref(ref)
 	{}
 
 	void disk_buffer_holder::reset(aux::block_cache_reference const& ref, char* buf, std::size_t const sz)
 	{
 		if (m_ref.cookie != aux::block_cache_reference::none) m_allocator->reclaim_blocks(m_ref);
-		else
-		{
-			if (m_manual && m_buf) std::free(m_buf);
-			else if (m_buf) m_allocator->free_disk_buffer(m_buf);
-		}
+		else if (m_buf) m_allocator->free_disk_buffer(m_buf);
 		m_buf = buf;
 		m_size = (std::uint32_t)sz;
 		m_ref = ref;
@@ -76,10 +72,7 @@ namespace libtorrent {
 	void disk_buffer_holder::reset(char* const buf, std::size_t const sz)
 	{
 		if (m_ref.cookie != aux::block_cache_reference::none) m_allocator->reclaim_blocks(m_ref);
-		else {
-			if (m_manual && m_buf) std::free(m_buf);
-			else if (m_buf) m_allocator->free_disk_buffer(m_buf);
-		}
+		else if (m_buf) m_allocator->free_disk_buffer(m_buf);
 		m_buf = buf;
 		m_size = (std::uint32_t)sz;
 		m_ref = aux::block_cache_reference();
