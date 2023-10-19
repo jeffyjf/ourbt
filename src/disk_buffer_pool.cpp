@@ -56,8 +56,12 @@ namespace libtorrent {
 	namespace {
 
 	// this is posted to the network thread
-	void watermark_callback(std::vector<std::weak_ptr<disk_observer>> const& cbs)
+	void watermark_callback(std::vector<std::weak_ptr<disk_observer>> const& cbs, std::vector<std::function<void()>> const& callbacks)
 	{
+		for (auto const& c : callbacks)
+		{
+			c();
+		}
 		for (auto const& i : cbs)
 		{
 			std::shared_ptr<disk_observer> o = i.lock();
@@ -122,8 +126,10 @@ namespace libtorrent {
 
 		std::vector<std::weak_ptr<disk_observer>> cbs;
 		m_observers.swap(cbs);
+		std::vector<std::function<void()>> callbacks;
+		m_callbacks.swap(callbacks);
 		l.unlock();
-		m_ios.post(std::bind(&watermark_callback, std::move(cbs)));
+		m_ios.post(std::bind(&watermark_callback, std::move(cbs), std::move(callbacks)));
 	}
 
 #if TORRENT_USE_ASSERTS

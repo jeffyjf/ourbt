@@ -1034,6 +1034,9 @@ int block_cache::try_evict_blocks(int num, cached_piece_entry* ignore)
 			TORRENT_PIECE_ASSERT(pe->in_use, pe);
 			i.next();
 
+			if  (pe->is_protected())
+				continue;
+
 			if (pe == ignore)
 				continue;
 
@@ -1336,6 +1339,7 @@ void block_cache::insert_blocks(cached_piece_entry* pe, int block, span<iovec_t 
 					pe->blocks[block].compressed_buf = compress_buf;
 					pe->blocks[block].compressed_buf_size = compressed_length;
 				}
+				pe->inc_protected_blocks();
 			}
 
 			TORRENT_PIECE_ASSERT(buf.data() != nullptr, pe);
@@ -1788,13 +1792,26 @@ void block_cache::reclaim_block(storage_interface* st, aux::block_cache_referenc
 	TORRENT_PIECE_ASSERT(m_send_buffer_blocks > 0, pe);
 	--m_send_buffer_blocks;
 
-	maybe_free_piece(pe);
+	maybe_free_piece(pe, true);
 }
 
-bool block_cache::maybe_free_piece(cached_piece_entry* pe)
+bool block_cache::maybe_free_piece(cached_piece_entry* pe, bool dec)
 {
+	if (pe->is_protected())
+	{
+		if (dec)
+		{
+			if (!pe->dec_protected_blocks())
+				return false;
+		} else {
+			return false;
+		}
+	} else {
+		if (!pe->marked_for_eviction)
+			return false;
+	}
+		
 	if (!pe->ok_to_evict()
-		|| !pe->marked_for_eviction
 		|| !pe->jobs.empty())
 		return false;
 

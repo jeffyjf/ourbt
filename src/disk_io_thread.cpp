@@ -1829,6 +1829,19 @@ constexpr disk_job_flags_t disk_interface::enable_compress;
 		return exceeded;
 	}
 
+	bool disk_io_thread::async_hash_compress(storage_index_t storage, piece_index_t piece, disk_job_flags_t flags
+			, std::function<void(piece_index_t, sha1_hash const&, storage_error const&)> handler, std::function<void()> callback)
+	{
+		if (m_disk_cache.exceeded_max_size())
+		{
+			m_disk_cache.register_callback(callback);
+			return false;
+		}
+
+		async_hash(storage, piece, flags, handler);
+		return true;
+	}
+
 	void disk_io_thread::async_hash(storage_index_t const storage
 		, piece_index_t const piece, disk_job_flags_t const flags
 		, std::function<void(piece_index_t, sha1_hash const&, storage_error const&)> handler)
@@ -2351,7 +2364,32 @@ constexpr disk_job_flags_t disk_interface::enable_compress;
 		for (int i = 0; i < blocks_left; ++i)
 		{
 			// is the block not in the cache?
-			if (pe->blocks[first_block + i].buf == nullptr) continue;
+			cached_block_entry& bl = pe->blocks[first_block + i];
+			if (bl.buf == nullptr)
+			{
+				if (bl.compressed_buf == nullptr)
+					continue;
+
+				std::size_t uncompress_len;
+				int stat_res = snappy_uncompressed_length(bl.compressed_buf, bl.compressed_buf_size, &uncompress_len);
+				if (stat_res != SNAPPY_OK) {
+					if (stat_res == SNAPPY_INVALID_INPUT)
+						aux::throw_ex<system_error>(errors::snappy_invalid_input);
+					if (stat_res == SNAPPY_BUFFER_TOO_SMALL)
+						aux::throw_ex<system_error>(errors::snappy_buffer_too_small);
+				}
+				char* uncompress_buf = (char *)std::malloc(uncompress_len);
+				stat_res = snappy_uncompress(bl.compressed_buf, bl.compressed_buf_size, uncompress_buf, &uncompress_len);
+				if (stat_res != SNAPPY_OK) {
+					std::free(uncompress_buf);
+					if (stat_res == SNAPPY_INVALID_INPUT)
+						aux::throw_ex<system_error>(errors::snappy_invalid_input);
+					if (stat_res == SNAPPY_BUFFER_TOO_SMALL)
+						aux::throw_ex<system_error>(errors::snappy_buffer_too_small);
+					aux::throw_ex<system_error>(errors::snappy_unknow_error);
+				}
+				bl.buf = uncompress_buf;
+			}
 
 			// if we fail to lock the block, it's no longer in the cache
 			if (m_disk_cache.inc_block_refcount(pe, first_block + i, block_cache::ref_hashing) == false)

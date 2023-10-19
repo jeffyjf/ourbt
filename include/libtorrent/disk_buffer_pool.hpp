@@ -82,6 +82,17 @@ namespace aux { struct session_settings; }
 		}
 		int num_to_evict(int num_needed = 0);
 
+		bool exceeded_max_size()
+		{
+			std::unique_lock<std::mutex> l(m_pool_mutex);
+			return m_exceeded_max_size;
+		}
+
+		void register_callback(std::function<void()> callback)
+		{
+			m_callbacks.push_back(callback);
+		}
+
 		void set_settings(aux::session_settings const& sett);
 
 	protected:
@@ -105,6 +116,8 @@ namespace aux { struct session_settings; }
 		// of buffers in use drops below the low watermark,
 		// we start calling these functions back
 		std::vector<std::weak_ptr<disk_observer>> m_observers;
+
+		std::vector<std::function<void()>> m_callbacks;
 
 		// callback used to tell the cache it needs to free up some blocks
 		std::function<void()> m_trigger_cache_trim;

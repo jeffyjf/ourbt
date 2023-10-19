@@ -2465,6 +2465,105 @@ bool is_downloading_state(int const st)
 	}
 	catch (...) { handle_exception(); }
 
+	void torrent::delay_verify(piece_index_t piece)
+	{
+		TORRENT_ASSERT(is_single_thread());
+		debug_log("delay_verify, m_verifying_piece: %d", static_cast<int>(piece));
+		if (!m_ses.disk_thread().async_hash_compress(m_storage, piece
+				, disk_interface::sequential_access | disk_interface::enable_compress
+				, std::bind(&torrent::on_piece_verified_loop
+					,shared_from_this(), _1, _2, _3)
+				, std::bind(&torrent::delay_verify, shared_from_this(), piece)))
+		{
+			debug_log("delay_verify, disk cache exceed max use, piece: %d verify delayed", int(piece));
+		}
+	}
+
+	void torrent::start_verifying_loop()
+	{
+		TORRENT_ASSERT(is_single_thread());
+		int num_outstanding = settings().get_int(settings_pack::checking_mem_usage) * block_size()
+			/ m_torrent_file->piece_length();  //128k块 = 256
+		int const min_outstanding = 4
+			* std::max(1, settings().get_int(settings_pack::aio_threads)
+				/ disk_io_thread::hasher_thread_divisor);  //4个io线程对于1个hasher线程 16个io线程4个哈希线程
+		if (num_outstanding < min_outstanding) num_outstanding = min_outstanding;
+		debug_log("Start verifying loop, thread num: %d", num_outstanding);
+		for (int i = 0; i < num_outstanding; ++i)
+		{
+			while (verifying_piece(m_verifying_piece) || verified_piece(m_verifying_piece))
+			{
+				if (m_verifying_piece >= m_torrent_file->end_piece())
+					return;
+				++m_verifying_piece;
+			}
+			if (m_verifying_piece >= m_torrent_file->end_piece()) break;
+			verifying(m_verifying_piece);
+			debug_log("start_verifying_loop, m_verifying_piece: %d"
+				, static_cast<int>(m_verifying_piece));
+			if (!m_ses.disk_thread().async_hash_compress(m_storage, m_verifying_piece
+				, disk_interface::sequential_access | disk_interface::enable_compress
+				, std::bind(&torrent::on_piece_verified_loop
+					, shared_from_this(), _1, _2, _3)
+				, std::bind(&torrent::delay_verify, shared_from_this(), m_verifying_piece)))
+			{
+				debug_log("start_verifying_loop, disk cache exceed max use, piece: %d verify delayed", int(m_verifying_piece));
+			}
+		}
+		++m_verifying_piece;
+	}
+
+	void torrent::on_piece_verified_loop(piece_index_t piece, sha1_hash const& piece_hash, storage_error const& error)
+	{
+		TORRENT_ASSERT(is_single_thread());
+		if (m_abort) return;
+		if (m_deleted) return;
+		if (error)
+		{
+			debug_log("on_piece_verified_loop, fatal disk error: (%d) %s", error.ec.value()
+					  , error.ec.message().c_str());
+			leave_seed_mode(torrent::seed_mode_t::check_files);
+			return;
+		}
+		if (piece_hash != m_torrent_file->hash_for_piece(piece))
+		{
+			debug_log("on_piece_verified_loop, piece: %d hash not match", int(piece));
+			leave_seed_mode(torrent::seed_mode_t::check_files);
+			return;
+		}
+		verified(piece);
+		std::sort(m_connections.begin(), m_connections.end(), [](peer_connection* l, peer_connection* r){return l->get_undownloaded_num() < r->get_undownloaded_num();});
+		for (auto c : m_connections) {
+			auto p = c->self();
+			if (p->is_disconnecting())
+				continue;
+			p->announce_piece(piece);
+		}
+		debug_log("on_piece_verified_loop, piece: %d verified", int(piece));
+		if (m_verifying_piece >= m_torrent_file->end_piece())
+		{
+			return;
+		}
+
+		verifying(m_verifying_piece);
+		debug_log("on_piece_verified_loop, m_verifying_piece: %d"
+				, static_cast<int>(m_verifying_piece));
+		if (!m_ses.disk_thread().async_hash_compress(m_storage, m_verifying_piece
+			, disk_interface::sequential_access | disk_interface::enable_compress
+			, std::bind(&torrent::on_piece_verified_loop
+				, shared_from_this(), _1, _2, _3)
+			, std::bind(&torrent::delay_verify, shared_from_this(), m_verifying_piece)))
+		{
+			debug_log("on_piece_verified_loop, disk cache exceed max use, piece: %d verify delayed", int(m_verifying_piece));
+		}
+		while (verifying_piece(m_verifying_piece) || verified_piece(m_verifying_piece))
+		{
+			++m_verifying_piece;
+			if (m_verifying_piece >= m_torrent_file->end_piece())
+				return;
+		}
+	}
+
 	void torrent::start_checking()
 	{
 		TORRENT_ASSERT(should_check_files());

@@ -2018,6 +2018,13 @@ namespace {
 		TORRENT_ASSERT(m_sent_handshake);
 		TORRENT_ASSERT(t->valid_metadata());
 
+		if  (t->seed_mode())
+		{
+			t->start_verifying_loop();
+			m_sent_bitfield = true;
+			return;
+		}
+
 #ifndef TORRENT_DISABLE_SUPERSEEDING
 		if (t->super_seeding())
 		{
