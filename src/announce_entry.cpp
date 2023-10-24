@@ -117,7 +117,7 @@ namespace libtorrent {
 
 	bool announce_endpoint::can_announce(time_point now, bool is_seed, std::uint8_t fail_limit) const
 	{
-		TORRENT_ASSERT(next_announce <= now + tracker_retry_delay_max);
+		// TORRENT_ASSERT(next_announce <= now + tracker_retry_delay_max);
 		// if we're a seed and we haven't sent a completed
 		// event, we need to let this announce through
 		bool const need_send_complete = is_seed && !complete_sent;

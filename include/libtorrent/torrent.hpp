@@ -416,6 +416,11 @@ namespace libtorrent {
 		void files_checked();
 		void start_checking();
 
+		void start_verifying_loop();
+		void delay_verify(piece_index_t piece);
+		void on_piece_verified_loop(piece_index_t piece, sha1_hash const& piece_hash
+			, storage_error const& error);
+
 		void start_announcing();
 		void stop_announcing();
 
@@ -1461,6 +1466,8 @@ namespace libtorrent {
 
 		// if we're finished, this is the timestamp of when we finished
 		time_point32 m_became_finished = aux::time_now32();
+
+		piece_index_t m_verifying_piece{0};
 
 		// when checking, this is the first piece we have not
 		// issued a hash job for

@@ -706,7 +706,6 @@ namespace aux {
 		virtual void write_have(piece_index_t index) = 0;
 		virtual void write_dont_have(piece_index_t index) = 0;
 		virtual void write_keepalive() = 0;
-		virtual void try_compress_piece(peer_request const& r, disk_buffer_holder buffer) = 0;
 		virtual void write_piece(peer_request const& r, disk_buffer_holder buffer) = 0;
 		virtual void write_suggest(piece_index_t piece) = 0;
 		virtual void write_bitfield() = 0;
@@ -833,8 +832,13 @@ namespace aux {
 		// connected to, in case we use a proxy
 		tcp::endpoint m_remote;
 
+		typed_bitfield<piece_index_t> m_undownloaded;
+		std::size_t m_undownloaded_num = 0;
+
 	public:
 		chained_buffer m_send_buffer;
+		int get_undownloaded_num()
+		{ return m_undownloaded_num; }
 	private:
 
 		// the disk thread to use to issue disk jobs to

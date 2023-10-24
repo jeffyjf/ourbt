@@ -30,6 +30,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include <snappy-c.h>
+
 #include "libtorrent/config.hpp"
 #include "libtorrent/block_cache.hpp"
 #include "libtorrent/assert.hpp"
@@ -47,6 +49,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/disable_warnings_push.hpp"
 #include <boost/variant/get.hpp>
 #include "libtorrent/aux_/disable_warnings_pop.hpp"
+#include "libtorrent/aux_/throw.hpp"
 
 /*
 
@@ -567,6 +570,10 @@ void block_cache::try_evict_one_volatile()
 
 			to_delete[num_to_delete++] = b.buf;
 			b.buf = nullptr;
+			if (b.compressed_buf != nullptr) {
+				std::free(b.compressed_buf);
+				b.compressed_buf = nullptr;
+			}
 			TORRENT_PIECE_ASSERT(pe->num_blocks > 0, pe);
 			--pe->num_blocks;
 			TORRENT_PIECE_ASSERT(m_read_cache_size > 0, pe);
@@ -742,7 +749,12 @@ cached_piece_entry* block_cache::add_dirty_block(disk_io_job* j, bool const add_
 		TORRENT_PIECE_ASSERT(b.dirty == 0, pe);
 	}
 
-	b.buf = boost::get<disk_buffer_holder>(j->argument).release();
+	if (boost::get<disk_buffer_holder>(j->argument).is_compressed()) {
+		b.compressed_buf_size = boost::get<disk_buffer_holder>(j->argument).size();
+		b.compressed_buf = boost::get<disk_buffer_holder>(j->argument).release();
+	} else {
+		b.buf = boost::get<disk_buffer_holder>(j->argument).release();
+	}
 
 	b.dirty = true;
 	++pe->num_blocks;
@@ -836,6 +848,10 @@ void block_cache::free_block(cached_piece_entry* pe, int block)
 	--pe->num_blocks;
 	free_buffer(b.buf);
 	b.buf = nullptr;
+	if (b.compressed_buf != nullptr) {
+		std::free(b.compressed_buf);
+		b.compressed_buf = nullptr;
+	}
 }
 
 bool block_cache::evict_piece(cached_piece_entry* pe, tailqueue<disk_io_job>& jobs
@@ -855,6 +871,10 @@ bool block_cache::evict_piece(cached_piece_entry* pe, tailqueue<disk_io_job>& jo
 		TORRENT_PIECE_ASSERT(num_to_delete < pe->blocks_in_piece, pe);
 		to_delete[num_to_delete++] = pe->blocks[i].buf;
 		pe->blocks[i].buf = nullptr;
+		if (pe->blocks[i].compressed_buf != nullptr) {
+			std::free(pe->blocks[i].compressed_buf);
+			pe->blocks[i].compressed_buf = nullptr;
+		}
 		TORRENT_PIECE_ASSERT(pe->num_blocks > 0, pe);
 		--pe->num_blocks;
 		if (!pe->blocks[i].dirty)
@@ -1014,6 +1034,9 @@ int block_cache::try_evict_blocks(int num, cached_piece_entry* ignore)
 			TORRENT_PIECE_ASSERT(pe->in_use, pe);
 			i.next();
 
+			if  (pe->is_protected())
+				continue;
+
 			if (pe == ignore)
 				continue;
 
@@ -1044,6 +1067,10 @@ int block_cache::try_evict_blocks(int num, cached_piece_entry* ignore)
 
 				to_delete[num_to_delete++] = b.buf;
 				b.buf = nullptr;
+				if (b.compressed_buf != nullptr) {
+					std::free(b.compressed_buf);
+					b.compressed_buf = nullptr;
+				}
 				TORRENT_PIECE_ASSERT(pe->num_blocks > 0, pe);
 				--pe->num_blocks;
 				++removed;
@@ -1123,6 +1150,10 @@ int block_cache::try_evict_blocks(int num, cached_piece_entry* ignore)
 
 					to_delete[num_to_delete++] = b.buf;
 					b.buf = nullptr;
+					if (b.compressed_buf != nullptr) {
+						std::free(b.compressed_buf);
+						b.compressed_buf = nullptr;
+					}
 					TORRENT_PIECE_ASSERT(pe->num_blocks > 0, pe);
 					--pe->num_blocks;
 					++removed;
@@ -1236,7 +1267,6 @@ void block_cache::move_to_ghost(cached_piece_entry* pe)
 		TORRENT_PIECE_ASSERT(p->piece_refcount == 0, p);
 		erase_piece(p);
 	}
-
 	m_lru[pe->cache_state].erase(pe);
 	pe->cache_state += 1;
 	ghost_list->push_back(pe);
@@ -1263,7 +1293,6 @@ void block_cache::insert_blocks(cached_piece_entry* pe, int block, span<iovec_t 
 #ifdef TORRENT_EXPENSIVE_INVARIANT_CHECKS
 	INVARIANT_CHECK;
 #endif
-
 	TORRENT_ASSERT(pe);
 	TORRENT_ASSERT(pe->in_use);
 	TORRENT_PIECE_ASSERT(!iov.empty(), pe);
@@ -1298,6 +1327,20 @@ void block_cache::insert_blocks(cached_piece_entry* pe, int block, span<iovec_t 
 		else
 		{
 			pe->blocks[block].buf = buf.data();
+			if (bool(j->flags & disk_interface::enable_compress)) {
+				std::size_t block_size = buf.size();
+				std::size_t compressed_length = snappy_max_compressed_length(block_size);
+				char* compress_buf = (char*) std::malloc(compressed_length);
+				int stat_result = snappy_compress(pe->blocks[block].buf, block_size, compress_buf, &compressed_length);
+				// If compress rate less than 2% or compress failed, we give up compress it and transfer raw data block
+				if ((stat_result != SNAPPY_OK) || (compressed_length>=block_size || int(block_size/(block_size-compressed_length))>50)) {
+					std::free(compress_buf);
+				} else {
+					pe->blocks[block].compressed_buf = compress_buf;
+					pe->blocks[block].compressed_buf_size = compressed_length;
+				}
+				pe->inc_protected_blocks();
+			}
 
 			TORRENT_PIECE_ASSERT(buf.data() != nullptr, pe);
 			TORRENT_PIECE_ASSERT(pe->blocks[block].dirty == false, pe);
@@ -1402,6 +1445,10 @@ void block_cache::abort_dirty(cached_piece_entry* pe)
 		TORRENT_PIECE_ASSERT(pe->blocks[i].dirty, pe);
 		to_delete[num_to_delete++] = pe->blocks[i].buf;
 		pe->blocks[i].buf = nullptr;
+		if (pe->blocks[i].compressed_buf != nullptr) {
+			std::free(pe->blocks[i].compressed_buf);
+			pe->blocks[i].compressed_buf = nullptr;
+		}
 		pe->blocks[i].dirty = false;
 		TORRENT_PIECE_ASSERT(pe->num_blocks > 0, pe);
 		--pe->num_blocks;
@@ -1431,6 +1478,10 @@ int block_cache::drain_piece_bufs(cached_piece_entry& p, std::vector<char*>& buf
 		buf.push_back(p.blocks[i].buf);
 		++ret;
 		p.blocks[i].buf = nullptr;
+		if (p.blocks[i].compressed_buf != nullptr) {
+			std::free(p.blocks[i].compressed_buf);
+			p.blocks[i].compressed_buf = nullptr;
+		}
 		TORRENT_PIECE_ASSERT(p.num_blocks > 0, &p);
 		--p.num_blocks;
 
@@ -1646,7 +1697,6 @@ int block_cache::copy_from_piece(cached_piece_entry* const pe
 	// if there's no buffer, we don't have this block in
 	// the cache, and we're not currently reading it in either
 	// since it's not pending
-
 	if (inc_block_refcount(pe, start_block, ref_reading) == false)
 	{
 		TORRENT_ASSERT(!expect_no_fail);
@@ -1670,10 +1720,17 @@ int block_cache::copy_from_piece(cached_piece_entry* const pe
 		TORRENT_PIECE_ASSERT(pe->refcount > 0, pe);
 		int const blocks_per_piece = (j->storage->files().piece_length() + default_block_size - 1) / default_block_size;
 		TORRENT_ASSERT(block_offset < 0x4000);
-		j->argument = disk_buffer_holder(allocator
-			, aux::block_cache_reference{ j->storage->storage_index()
-				, static_cast<int>(pe->piece) * blocks_per_piece + start_block}
-			, bl.buf + block_offset, static_cast<std::size_t>(0x4000 - block_offset));
+		if (bl.compressed_buf_size != 0 && block_offset == 0) {
+			j->argument = disk_buffer_holder(allocator
+				, aux::block_cache_reference{ j->storage->storage_index()
+					, static_cast<int>(pe->piece) * blocks_per_piece + start_block}
+				, bl.compressed_buf, static_cast<std::size_t>(bl.compressed_buf_size));
+		} else {
+			j->argument = disk_buffer_holder(allocator
+				, aux::block_cache_reference{ j->storage->storage_index()
+					, static_cast<int>(pe->piece) * blocks_per_piece + start_block}
+				, bl.buf + block_offset, static_cast<std::size_t>(0x4000 - block_offset));
+		}
 		j->storage->inc_refcount();
 
 		++m_send_buffer_blocks;
@@ -1735,13 +1792,26 @@ void block_cache::reclaim_block(storage_interface* st, aux::block_cache_referenc
 	TORRENT_PIECE_ASSERT(m_send_buffer_blocks > 0, pe);
 	--m_send_buffer_blocks;
 
-	maybe_free_piece(pe);
+	maybe_free_piece(pe, true);
 }
 
-bool block_cache::maybe_free_piece(cached_piece_entry* pe)
+bool block_cache::maybe_free_piece(cached_piece_entry* pe, bool dec)
 {
+	if (pe->is_protected())
+	{
+		if (dec)
+		{
+			if (!pe->dec_protected_blocks())
+				return false;
+		} else {
+			return false;
+		}
+	} else {
+		if (!pe->marked_for_eviction)
+			return false;
+	}
+		
 	if (!pe->ok_to_evict()
-		|| !pe->marked_for_eviction
 		|| !pe->jobs.empty())
 		return false;
 

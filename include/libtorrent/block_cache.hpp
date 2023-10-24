@@ -133,6 +133,9 @@ namespace aux {
 
 		char* buf = nullptr;
 
+		char* compressed_buf = nullptr;
+		std::size_t compressed_buf_size = 0;
+
 		static constexpr int max_refcount = (1 << 29) - 1;
 
 		// the number of references to this buffer. These references
@@ -189,9 +192,23 @@ namespace aux {
 			return refcount == 0
 				&& piece_refcount == 0
 				&& !hashing
+				&& protected_blocks == 0
 				&& read_jobs.empty()
 				&& outstanding_read == 0
 				&& (ignore_hash || !hash || hash->offset == 0);
+		}
+
+		bool is_protected()
+		{ return protected_blocks != 0; }
+
+		void inc_protected_blocks()
+		{ ++protected_blocks; }
+
+		bool dec_protected_blocks()
+		{
+			TORRENT_ASSERT(protected_blocks > 0);
+			--protected_blocks;
+			return protected_blocks == 0;
 		}
 
 		// storage this piece belongs to
@@ -335,6 +352,8 @@ namespace aux {
 		// the sum of all refcounts in all blocks
 		std::int32_t refcount = 0;
 
+		std::uint32_t protected_blocks = 0;
+
 #if TORRENT_USE_ASSERTS
 		// the number of times this piece has finished hashing
 		int hash_passes = 0;
@@ -431,7 +450,7 @@ namespace aux {
 		// if the piece is marked for deletion and has a refcount
 		// of 0, this function will post any sync jobs and
 		// delete the piece from the cache
-		bool maybe_free_piece(cached_piece_entry* p);
+		bool maybe_free_piece(cached_piece_entry* p, bool dec = false);
 
 		// either returns the piece in the cache, or allocates
 		// a new empty piece and returns it.

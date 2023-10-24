@@ -98,8 +98,8 @@ namespace libtorrent {
 			TORRENT_ASSERT(h.m_allocator == m_allocator);
 			std::swap(h.m_buf, m_buf);
 			std::swap(h.m_size, m_size);
-			std::swap(h.m_manual, m_manual);
 			std::swap(h.m_ref, m_ref);
+			std::swap(h.m_compressed, m_compressed);
 		}
 
 		// if this returns true, the buffer may not be modified in place
@@ -110,16 +110,22 @@ namespace libtorrent {
 		explicit operator bool() const noexcept { return m_buf != nullptr; }
 
 		std::size_t size() const { return m_size; }
-		void setFree(std::uint32_t nf)  { m_manual = nf; }
+
+		void setCompressed() {
+			m_compressed = true;
+		}
+
+		bool is_compressed() {
+			return m_compressed;
+		}
 
 	private:
 		buffer_allocator_interface* m_allocator;
 		char* m_buf;
 		std::uint32_t m_size;
-		std::uint32_t m_manual;
 		aux::block_cache_reference m_ref;
+		bool m_compressed = false;
 	};
-
 }
 
 #endif

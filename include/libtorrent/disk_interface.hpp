@@ -140,6 +140,8 @@ namespace libtorrent {
 		// not hit the disk, but found the data in the read cache.
 		static constexpr disk_job_flags_t cache_hit = 5_bit;
 
+		static constexpr disk_job_flags_t enable_compress = 7_bit;
+
 		virtual storage_holder new_torrent(storage_constructor_type sc
 			, storage_params p, std::shared_ptr<void> const&) = 0;
 		virtual void remove_torrent(storage_index_t) = 0;
@@ -154,6 +156,8 @@ namespace libtorrent {
 			, disk_job_flags_t flags = {}) = 0;
 		virtual void async_hash(storage_index_t storage, piece_index_t piece, disk_job_flags_t flags
 			, std::function<void(piece_index_t, sha1_hash const&, storage_error const&)> handler) = 0;
+		virtual bool async_hash_compress(storage_index_t storage, piece_index_t piece, disk_job_flags_t flags
+			, std::function<void(piece_index_t, sha1_hash const&, storage_error const&)> handler, std::function<void()> callback) = 0;
 		virtual void async_move_storage(storage_index_t storage, std::string p, move_flags_t flags
 			, std::function<void(status_t, std::string const&, storage_error const&)> handler) = 0;
 		virtual void async_release_files(storage_index_t storage

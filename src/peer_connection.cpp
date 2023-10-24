@@ -163,6 +163,9 @@ namespace libtorrent {
 		m_counters.inc_stats_counter(counters::num_tcp_peers + m_socket->type() - 1);
 		std::shared_ptr<torrent> t = m_torrent.lock();
 
+		if (t)
+			m_undownloaded.resize(t->torrent_file().num_pieces());
+
 		if (t && t->m_group_members.size()>0) {
 			if (std::find(t->m_group_members.begin(), t->m_group_members.end(), m_peer_info->address()) != t->m_group_members.end()) {
 				peer_log(m_outgoing ? peer_log_alert::outgoing : peer_log_alert::incoming
@@ -1030,6 +1033,8 @@ namespace libtorrent {
 	void peer_connection::announce_piece(piece_index_t const index)
 	{
 		TORRENT_ASSERT(is_single_thread());
+		std::shared_ptr<torrent> t = m_torrent.lock();
+		TORRENT_ASSERT(t);
 		// dont announce during handshake
 		if (in_handshake()) return;
 
@@ -1052,10 +1057,11 @@ namespace libtorrent {
 			, static_cast<int>(index));
 #endif
 		write_have(index);
-#if TORRENT_USE_ASSERTS
-		std::shared_ptr<torrent> t = m_torrent.lock();
-		TORRENT_ASSERT(t);
-#endif
+		if (t->seed_mode())
+		{
+			m_undownloaded.set_bit(index);
+			++m_undownloaded_num;
+		}
 	}
 
 	bool peer_connection::has_piece(piece_index_t const i) const
@@ -1368,6 +1374,8 @@ namespace libtorrent {
 		// of the torrent and peer_connection::disconnect() will fail if it
 		// think it is
 		m_torrent = t;
+
+		m_undownloaded.resize(t->torrent_file().num_pieces());
 
 		m_is_group_member = false;
 		if (t->m_group_members.size()>0) {
@@ -2614,6 +2622,10 @@ namespace libtorrent {
 
 			m_last_incoming_request = aux::time_now();
 			fill_send_buffer();
+		}
+		if (t->seed_mode() && r.start == 0) {
+			m_undownloaded.clear_bit(r.piece);
+			--m_undownloaded_num;
 		}
 	}
 
@@ -5295,7 +5307,12 @@ namespace libtorrent {
 				// this means we're in seed mode and we haven't yet
 				// verified this piece (r.piece)
 				auto conn = self();
-				m_disk_thread.async_hash(t->storage(), r.piece, {}
+				
+				disk_job_flags_t flag;
+				if (t->m_enable_compression) {
+					flag |= disk_interface::enable_compress;
+				}
+				m_disk_thread.async_hash(t->storage(), r.piece, flag
 					, [conn](piece_index_t p, sha1_hash const& ph, storage_error const& e) {
 					conn->wrap(&peer_connection::on_seed_mode_hashed, p, ph, e); });
 				t->verifying(r.piece);
@@ -5336,9 +5353,11 @@ namespace libtorrent {
 				TORRENT_ASSERT(r.piece < t->torrent_file().end_piece());
 
 				auto conn = self();
+				disk_job_flags_t flag;
+				if (t->m_enable_compression) flag |= disk_interface::enable_compress;
 				m_disk_thread.async_read(t->storage(), r
 					, [conn, r](disk_buffer_holder buf, disk_job_flags_t f, storage_error const& ec)
-					{ conn->wrap(&peer_connection::on_disk_read_complete, std::move(buf), f, ec, r, clock_type::now()); });
+					{ conn->wrap(&peer_connection::on_disk_read_complete, std::move(buf), f, ec, r, clock_type::now()); }, flag);
 			}
 			m_last_sent_payload = clock_type::now();
 			m_requests.erase(m_requests.begin() + i);
@@ -5493,11 +5512,7 @@ namespace libtorrent {
 		{
 			t->add_suggest_piece(r.piece);
 		}
-		if (t->m_enable_compression) {
-			try_compress_piece(r, std::move(buffer));
-		} else {
-			write_piece(r, std::move(buffer));
-		}
+		write_piece(r, std::move(buffer));
 	}
 
 	void peer_connection::assign_bandwidth(int const channel, int const amount)
