@@ -1011,7 +1011,6 @@ namespace {
 
 		std::shared_ptr<torrent> t = associated_torrent().lock();
 		TORRENT_ASSERT(t);
-		int recv_pos_size = t->m_enable_compression?17:13;
 		bool const merkle = static_cast<std::uint8_t>(recv_buffer.front()) == 250;
 		if (merkle)
 		{
@@ -1020,22 +1019,22 @@ namespace {
 				received_bytes(0, received);
 				return;
 			}
-			if (recv_pos < recv_pos_size)
+			if (recv_pos < 17)
 			{
 				received_bytes(0, received);
 				return;
 			}
-			char const* ptr = recv_buffer.data() + (recv_pos_size - 4);
+			char const* ptr = recv_buffer.data() + 13;
 			int const list_size = detail::read_int32(ptr);
 
-			if (list_size > m_recv_buffer.packet_size() - (recv_pos_size - 4) || list_size < 0)
+			if (list_size > m_recv_buffer.packet_size() - 13 || list_size < 0)
 			{
 				received_bytes(0, received);
 				disconnect(errors::invalid_hash_list, operation_t::bittorrent, peer_error);
 				return;
 			}
 
-			if (m_recv_buffer.packet_size() - recv_pos_size - list_size > t->block_size())
+			if (m_recv_buffer.packet_size() - 17 - list_size > t->block_size())
 			{
 				received_bytes(0, received);
 				disconnect(errors::packet_too_large, operation_t::bittorrent, peer_error);
@@ -1046,7 +1045,7 @@ namespace {
 		{
 			if (recv_pos == 1)
 			{
-				if (m_recv_buffer.packet_size() - (recv_pos_size-4) > t->block_size())
+				if (m_recv_buffer.packet_size() - 13 > t->block_size())
 				{
 					received_bytes(0, received);
 					disconnect(errors::packet_too_large, operation_t::bittorrent, peer_error);
@@ -1058,9 +1057,7 @@ namespace {
 		// or data payload for the statistics
 		int piece_bytes = 0;
 
-		int header_size;
-		if (t->m_enable_compression) header_size = merkle?17:13;
-		else header_size = merkle?13:9;
+		int header_size = merkle?17:13;
 
 		peer_request p;
 		int list_size = 0;
@@ -1070,9 +1067,7 @@ namespace {
 			const char* ptr = recv_buffer.data() + 1;
 			p.piece = piece_index_t(detail::read_int32(ptr));
 			p.start = detail::read_int32(ptr);
-			int peer_optional_length;
-			if (t->m_enable_compression) peer_optional_length = detail::read_int32(ptr);
-			else peer_optional_length = 0;
+			int peer_optional_length = detail::read_int32(ptr);
 
 			if (merkle)
 			{
@@ -2368,26 +2363,21 @@ namespace {
 	// uint8_t  msg
 	// uint32_t piece index
 	// uint32_t start
+	// uint32_t optional_length
 	// uint32_t list len
 	// var      bencoded list
 	// var      piece data
-		char origin_head_msg[4 + 1 + 4 + 4 + 4];
-		char option_lenght_head_msg[4 + 1 + 4 + 4 + 4 + 4];
-
-		char* msg;
-		if (t->m_enable_compression) msg = option_lenght_head_msg;
-		else msg = origin_head_msg;
+		char msg[4 + 1 + 4 + 4 + 4 + 4];
 		char* ptr = msg;
 		TORRENT_ASSERT(r.length <= 16 * 1024);
-		if (t->m_enable_compression) detail::write_int32(r.length + 1 + 4 + 4 + 4, ptr);
-		else detail::write_int32(r.length + 1 + 4 + 4, ptr);
+		detail::write_int32(r.length + 1 + 4 + 4 + 4, ptr);
 		if (m_settings.get_bool(settings_pack::support_merkle_torrents) && merkle)
 			detail::write_uint8(250, ptr);
 		else
 			detail::write_uint8(msg_piece, ptr);
 		detail::write_int32(static_cast<int>(r.piece), ptr);
 		detail::write_int32(r.start, ptr);
-		if (t->m_enable_compression) detail::write_int32(r.optional_length,  ptr);
+		detail::write_int32(r.optional_length,  ptr);
 
 		// if this is a merkle torrent and the start offset
 		// is 0, we need to include the merkle node hashes
@@ -2412,14 +2402,12 @@ namespace {
 			detail::write_int32(r.length + 1 + 4 + 4 + 4 + int(piece_list_buf.size())
 				, ptr2);
 
-			if (t->m_enable_compression) send_buffer({msg, 21});
-			else send_buffer({msg, 17});
+			send_buffer({msg, 21});
 			send_buffer(piece_list_buf);
 		}
 		else
 		{
-			if (t->m_enable_compression) send_buffer({msg, 17});
-			else send_buffer({msg, 13});
+			send_buffer({msg, 17});
 		}
 
 		if (buffer.is_mutable())

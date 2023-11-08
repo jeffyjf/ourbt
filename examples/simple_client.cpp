@@ -121,9 +121,9 @@ int main(int argc, char* argv[]) try
 		| alert_category::dht
 		| alert_category::stats
 		| alert_category::session_log
-		//| alert_category::torrent_log
-		//| alert_category::peer_log
-		//| alert_category::incoming_request
+		| alert_category::torrent_log
+		| alert_category::peer_log
+		| alert_category::incoming_request
 		| alert_category::dht_operation
 		| alert_category::port_mapping_log
 		| alert_category::file_progress);
