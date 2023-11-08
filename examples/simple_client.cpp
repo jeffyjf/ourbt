@@ -93,6 +93,7 @@ int main(int argc, char* argv[]) try
 	settings.set_bool(settings_pack::smooth_connects, false);
 	settings.set_bool(settings_pack::auto_sequential, false);
 	settings.set_int(settings_pack::aio_threads, 30);
+	// settings.set_bool(settings_pack::disable_hash_checks, true);
 
 	std::string log_file_path(argv[3]);
 	if (log_file_path != "console") {
@@ -132,7 +133,7 @@ int main(int argc, char* argv[]) try
 	lt::add_torrent_params p;
 	p.save_path = argv[1];
 	//p.flags |= lt::torrent_flags::share_mode;
-    //p.flags |= lt::torrent_flags::seed_mode;
+    // p.flags |= lt::torrent_flags::seed_mode;
 	p.ti = std::make_shared<lt::torrent_info>(argv[2]);
 	p.group_members = argv[7];
 	std::string enable_compression(argv[4]);
